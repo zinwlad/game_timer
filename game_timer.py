@@ -27,210 +27,8 @@ from notification_window import NotificationWindow
 from achievements import Achievements  # Добавляем импорт класса Achievements
 from notification_window import NotificationWindow
 from logger import Logger
-
-class Settings:
-    """Класс для работы с настройками"""
-    def __init__(self, filename="timer_settings.json"):
-        self.logger = Logger("Settings")
-        self.filename = filename
-        self.default_settings = {
-            "mode": "timer",
-            "hours": 2,
-            "minutes": 0,
-            "processes": ["game.exe", "minecraft.exe", "CorelDRW.exe"],
-            "presets": {
-                "Короткий перерыв": {"hours": 0, "minutes": 30},
-                "1 час": {"hours": 1, "minutes": 0},
-                "2 часа": {"hours": 2, "minutes": 0}
-            },
-            "theme": "light",
-            "check_interval": 5,
-            "autostart": False,
-            "hotkeys": {
-                "pause": "ctrl+space",
-                "reset": "ctrl+r"
-            },
-            "inactivity_timeout": 300,  # 5 minutes in seconds
-            "cache_lifetime": 5,  # 5 seconds for process cache
-            "ui_update_interval": 1000,  # 1 second for UI updates
-        }
-        self.settings = self.load()
-        self.logger.info("Settings initialized successfully")
-
-    def load(self):
-        """Загрузка настроек из файла"""
-        try:
-            if os.path.exists(self.filename):
-                with open(self.filename, 'r', encoding='utf-8') as f:
-                    settings = {**self.default_settings, **json.load(f)}
-                    self.logger.info("Settings loaded successfully")
-                    return settings
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON in settings file: {e}")
-        except Exception as e:
-            self.logger.error(f"Error loading settings: {e}")
-        self.logger.warning("Using default settings")
-        return self.default_settings.copy()
-
-    def save(self):
-        """Сохранение настроек в файл"""
-        try:
-            with open(self.filename, 'w', encoding='utf-8') as f:
-                json.dump(self.settings, f, ensure_ascii=False, indent=4)
-            self.logger.info("Settings saved successfully")
-        except Exception as e:
-            self.logger.error(f"Error saving settings: {e}")
-            raise
-
-    def get(self, key, default=None):
-        """Получение значения настройки"""
-        return self.settings.get(key, default)
-
-    def set(self, key, value):
-        """Установка значения настройки"""
-        self.settings[key] = value
-        self.save()
-
-class ProcessMonitor:
-    """Класс для мониторинга процессов"""
-    def __init__(self):
-        self.logger = Logger("ProcessMonitor")
-        self._cache = {}
-        self._cache_time = 0
-        self._cache_lifetime = 5
-        self._usage_db = "usage_stats.db"
-        self._process_history = {}  # История процессов
-        self._last_cleanup = time.time()
-        self._cleanup_interval = 300  # Очистка кэша каждые 5 минут
-        self._init_db()
-        self.logger.info("ProcessMonitor initialized")
-
-    def _init_db(self):
-        """Инициализация базы данных для статистики"""
-        try:
-            with sqlite3.connect(self._usage_db) as conn:
-                conn.execute('''
-                    CREATE TABLE IF NOT EXISTS usage_stats (
-                        timestamp TEXT,
-                        process_name TEXT,
-                        duration INTEGER,
-                        PRIMARY KEY (timestamp, process_name)
-                    )
-                ''')
-            self.logger.info("Database initialized successfully")
-        except sqlite3.Error as e:
-            self.logger.error(f"Database initialization error: {e}")
-            raise
-
-    def log_usage(self, process_name, duration):
-        """Записывает использование процесса в базу данных"""
-        try:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with sqlite3.connect(self._usage_db) as conn:
-                conn.execute(
-                    "INSERT INTO usage_stats (timestamp, process_name, duration) VALUES (?, ?, ?)",
-                    (timestamp, process_name, duration)
-                )
-            self.logger.debug(f"Logged usage for {process_name}: {duration}s")
-        except sqlite3.Error as e:
-            self.logger.error(f"Error logging usage stats: {e}")
-            raise
-
-    def get_usage_stats(self, days=7):
-        """Получает статистику использования за последние дни"""
-        since_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        with sqlite3.connect(self._usage_db) as conn:
-            return conn.execute('''
-                SELECT process_name, SUM(duration) as total_duration
-                FROM usage_stats
-                WHERE timestamp >= ?
-                GROUP BY process_name
-                ORDER BY total_duration DESC
-            ''', (since_date,)).fetchall()
-
-    def _cleanup_cache(self):
-        """Очистка устаревших записей кэша"""
-        current_time = time.time()
-        if current_time - self._last_cleanup > self._cleanup_interval:
-            try:
-                # Удаляем устаревшие записи из истории процессов
-                for proc_name in list(self._process_history.keys()):
-                    if current_time - self._process_history[proc_name]['last_seen'] > self._cleanup_interval:
-                        del self._process_history[proc_name]
-                
-                self._last_cleanup = current_time
-                self.logger.debug("Cache cleanup completed")
-            except Exception as e:
-                self.logger.error(f"Cache cleanup failed: {str(e)}")
-
-    def _update_process_history(self, process_name, is_running):
-        """Обновление истории процессов"""
-        current_time = time.time()
-        if process_name not in self._process_history:
-            self._process_history[process_name] = {
-                'first_seen': current_time,
-                'last_seen': current_time,
-                'run_count': 1 if is_running else 0,
-                'is_running': is_running
-            }
-        else:
-            history = self._process_history[process_name]
-            history['last_seen'] = current_time
-            if is_running != history['is_running']:
-                history['is_running'] = is_running
-                if is_running:
-                    history['run_count'] += 1
-
-    def get_active_processes(self):
-        """Получение списка активных процессов с оптимизированным кэшированием"""
-        current_time = time.time()
-        
-        # Проверяем необходимость очистки кэша
-        self._cleanup_cache()
-        
-        # Проверяем актуальность кэша
-        if current_time - self._cache_time > self._cache_lifetime:
-            try:
-                new_cache = {}
-                for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent']):
-                    try:
-                        proc_info = p.info
-                        proc_name = proc_info['name']
-                        new_cache[proc_name] = {
-                            'pid': p.pid,
-                            'cpu_percent': proc_info['cpu_percent'],
-                            'memory_percent': proc_info['memory_percent'],
-                            'time': current_time
-                        }
-                        # Обновляем историю процессов
-                        self._update_process_history(proc_name, True)
-                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                        continue
-                
-                # Обновляем кэш и время
-                self._cache = new_cache
-                self._cache_time = current_time
-                
-                # Помечаем процессы, которые больше не активны
-                for proc_name in self._process_history:
-                    if proc_name not in new_cache:
-                        self._update_process_history(proc_name, False)
-                
-            except Exception as e:
-                self.logger.error(f"Failed to update process cache: {str(e)}")
-                return self._cache.keys()  # Возвращаем старый кэш в случае ошибки
-        
-        return self._cache.keys()
-
-    def get_process_stats(self, process_name):
-        """Получение статистики процесса"""
-        if process_name in self._cache:
-            return self._cache[process_name]
-        return None
-
-    def get_process_history(self, process_name):
-        """Получение истории процесса"""
-        return self._process_history.get(process_name)
+from settings import Settings
+from process_monitor import ProcessMonitor
 
 class GameTimerApp:
     def __init__(self, root):
@@ -280,6 +78,7 @@ class GameTimerApp:
             # Переменные для отслеживания активности
             self.last_mouse_pos = pyautogui.position()
             self.last_activity = time.time()
+            self.logger.debug(f"last_activity initialized: {self.last_activity}")
             
             # Остальные переменные
             self.mode = tk.StringVar(value=self.settings.get("mode"))
@@ -425,24 +224,26 @@ class GameTimerApp:
         """Проверка активности пользователя с помощью pyautogui"""
         current_pos = pyautogui.position()
         current_time = time.time()
-        
+
+        # Убедимся, что last_activity всегда имеет корректное значение
+        if self.last_activity is None:
+            self.last_activity = current_time
+
         # Проверяем движение мыши и активность клавиатуры
-        if (current_pos != self.last_mouse_pos or 
-            pyautogui.KEYBOARD_KEYS):  # Проверка нажатий клавиш
+        if current_pos != self.last_mouse_pos or any(keyboard.is_pressed(key) for key in self.settings.get("hotkeys", {}).values()):
             self.last_activity = current_time
             self.last_mouse_pos = current_pos
-        
+
         # Если превышен таймаут неактивности
-        if (current_time - self.last_activity > 
-            self.settings.get("inactivity_timeout")):
+        inactivity_timeout = self.settings.get("inactivity_timeout", 300)
+        if current_time - self.last_activity > inactivity_timeout:
             if not self.paused and self.running:
                 self.pause_resume_timer()
-                self.status_label.config(
-                    text="Статус: Приостановлено (нет активности)")
-        
+                self.status_label.config(text="Статус: Приостановлено (нет активности)")
+
         # Обновляем статус процессов
         self.update_process_status()
-        
+
         # Планируем следующую проверку
         self.root.after(1000, self.check_user_activity)
 
