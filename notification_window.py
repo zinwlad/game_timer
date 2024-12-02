@@ -26,153 +26,133 @@ class NotificationWindow:
             self.style.configure(
                 "Healthy.Horizontal.TProgressbar",
                 troughcolor='white',
-                background=self.gradient_colors[1],  # Используем второй цвет градиента
+                background=self.gradient_colors[1],
                 thickness=10
             )
             
-            self.window = tk.Tk()
-            self.window.withdraw()  # Скрываем основное окно
-            
             # Создаем всплывающее окно
             self.popup = tk.Toplevel()
-            self.popup.withdraw()  # Сначала скрываем
+            self.popup.withdraw()
             
             # Настройка окна
             self.popup.title("🎮 Перерыв!")
-            self.popup.geometry("600x500")  # Увеличиваем размер окна
-            
-            # Создаем и устанавливаем градиентный фон
-            self.background_image = self._create_gradient_background()
-            background_label = tk.Label(self.popup, image=self.background_image)
-            background_label.place(x=0, y=0, relwidth=1, relheight=1)
-            
-            # Убираем рамку окна и делаем его поверх других окон
-            self.popup.overrideredirect(True)
-            self.popup.attributes('-topmost', True)
+            self.popup.overrideredirect(True)  # Убираем заголовок окна
+            self.popup.configure(bg=self.gradient_colors[0])  # Устанавливаем цвет фона
             
             # Создаем основной контейнер
-            self.content_frame = tk.Frame(self.popup)
-            self.content_frame.pack(expand=True, fill='both', padx=30, pady=30)
-            self.content_frame.configure(bg=self.gradient_colors[0])  # Используем первый цвет градиента
+            self.content_frame = tk.Frame(self.popup, bg=self.gradient_colors[0])
+            self.content_frame.pack(expand=True, fill='both', padx=20, pady=20)
             
-            # Добавляем анимированную иконку
+            # Иконки для анимации
+            self.icons = ["🎮", "⭐", "🌟", "✨"]
+            self.current_icon = 0
+            
+            # Создаем все элементы интерфейса
             self._create_animated_icon()
-            
-            # Добавляем заголовок с эффектом свечения
-            self._create_glowing_title()
-            
-            # Добавляем мотивационное сообщение
+            self._create_title()
             self._create_message()
-            
-            # Добавляем прогресс-бар здоровья
             self._create_health_bar()
-            
-            # Добавляем красивую кнопку закрытия
             self._create_close_button()
-            
-            # Позиционируем окно
-            self._position_window()
             
             # Инициализируем счетчики для анимаций
             self.blink_count = 0
             self.glow_intensity = 0
             self.glow_increasing = True
             
-            # Настраиваем автозакрытие
-            self.popup.after(30000, self.close)
+            # Добавляем обработку закрытия окна
+            self.popup.protocol("WM_DELETE_WINDOW", self.close)
             
         except Exception as e:
             self.logger.error(f"Failed to initialize notification window: {str(e)}")
             raise
 
     def _generate_gradient_colors(self):
-        """Генерация случайных цветов для градиента"""
+        """Генерация цветов для градиента"""
         try:
             colors = [
-                ('#FF6B6B', '#4ECDC4'),  # Красный к бирюзовому
-                ('#A8E6CF', '#FFD3B6'),  # Мятный к персиковому
-                ('#FFB6B9', '#8AC6D1'),  # Розовый к голубому
-                ('#B8F2E6', '#FFA69E')   # Бирюзовый к лососевому
+                ('#FF4500', '#FF8C00'),  # Красно-оранжевый к темно-оранжевому
+                ('#FF8000', '#FFA500'),  # Оранжевый к светло-оранжевому
+                ('#FF0000', '#FF6347'),  # Красный к томатному
+                ('#F09327', '#FFE4B5')   # Оранжевый к персиковому
             ]
-            return random.choice(colors)
+            gradient = random.choice(colors)
+            return gradient
         except Exception as e:
             self.logger.error(f"Failed to generate gradient colors: {str(e)}")
-            return ('#4A90E2', '#50E3C2')  # Возвращаем безопасные цвета по умолчанию
+            return ('#FF4500', '#FF8C00')  # Безопасные цвета по умолчанию
 
     def _create_gradient_background(self):
         """Создание градиентного фона"""
-        try:
-            width = 600
-            height = 500
-            image = Image.new('RGB', (width, height))
-            draw = ImageDraw.Draw(image)
-            
-            color1 = self.gradient_colors[0]
-            color2 = self.gradient_colors[1]
-            
-            for y in range(height):
-                r = int((1 - y/height) * int(color1[1:3], 16) + (y/height) * int(color2[1:3], 16))
-                g = int((1 - y/height) * int(color1[3:5], 16) + (y/height) * int(color2[3:5], 16))
-                b = int((1 - y/height) * int(color1[5:7], 16) + (y/height) * int(color2[5:7], 16))
-                draw.line([(0, y), (width, y)], fill=(r, g, b))
-            
-            return ImageTk.PhotoImage(image)
-        except Exception as e:
-            self.logger.error(f"Failed to create gradient background: {str(e)}")
-            # Создаем одноцветный фон в случае ошибки
-            image = Image.new('RGB', (600, 500), '#4A90E2')
-            return ImageTk.PhotoImage(image)
+        width = 600
+        height = 500
+        image = Image.new('RGB', (width, height))
+        draw = ImageDraw.Draw(image)
+        
+        # Конвертируем hex в RGB
+        def hex_to_rgb(hex_color):
+            hex_color = hex_color.lstrip('#')
+            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        
+        color1 = hex_to_rgb(self.gradient_colors[0])
+        color2 = hex_to_rgb(self.gradient_colors[1])
+        
+        for y in range(height):
+            r = int(color1[0] + (color2[0] - color1[0]) * y / height)
+            g = int(color1[1] + (color2[1] - color1[1]) * y / height)
+            b = int(color1[2] + (color2[2] - color1[2]) * y / height)
+            draw.line([(0, y), (width, y)], fill=(r, g, b))
+        
+        return ImageTk.PhotoImage(image)
 
     def _create_animated_icon(self):
         """Создание анимированной иконки"""
-        self.icons = ["⏰", "⌛", "🎮", "🎯"]
-        self.current_icon = 0
         self.icon_label = tk.Label(
             self.content_frame,
             text=self.icons[0],
-            font=("Segoe UI Emoji", 82),
+            font=("Segoe UI Emoji", 64),
             bg=self.gradient_colors[0],
-            fg='white'
+            fg=self.gradient_colors[1]
         )
-        self.icon_label.pack(pady=(0, 20))
+        self.icon_label.pack(pady=(0, 10))
 
-    def _create_glowing_title(self):
-        """Создание заголовка с эффектом свечения"""
+    def _create_title(self):
+        """Создание заголовка"""
         self.title_label = tk.Label(
             self.content_frame,
-            text="ПОРА ОТДОХНУТЬ!",
-            font=("Arial Black", 36, "bold"),
+            text="ЕГОР, ПОРА ОТДОХНУТЬ!",
+            font=("Comic Sans MS", 28, "bold"),
             bg=self.gradient_colors[0],
-            fg='white'
+            fg=self.gradient_colors[1]
         )
-        self.title_label.pack(pady=(0, 20))
+        self.title_label.pack(pady=(0, 10))
 
     def _create_message(self):
-        """Создание мотивационного сообщения"""
+        """Создание сообщения"""
         messages = [
-            "Сделайте перерыв на 20 минут\nВаши глаза и спина скажут спасибо!",
-            "Время размяться и отдохнуть!\nЗдоровье важнее игр 🌟",
-            "Небольшой перерыв - большая польза!\nВстаньте и разомнитесь 💪",
-            "Пора передохнуть и вернуться с новыми силами!\nВаше здоровье - главный приоритет 🌿"
+            "Давай сделаем перерыв!\nТвои глазки устали от экрана 👀",
+            "Время размяться!\nПобегай и поиграй немного 🦸‍♂️",
+            "Пора отдохнуть!\nМожет, поиграем в другую игру? 🎯",
+            "Перерыв - это здорово!\nПора подвигаться и размяться 🌟"
         ]
         self.message = tk.Label(
             self.content_frame,
             text=random.choice(messages),
-            font=("Segoe UI", 24),
-            wraplength=500,
+            font=("Comic Sans MS", 20),
+            wraplength=400,
             bg=self.gradient_colors[0],
-            fg='white'
+            fg=self.gradient_colors[1],
+            justify=tk.CENTER
         )
-        self.message.pack(pady=20)
+        self.message.pack(pady=10)
 
     def _create_health_bar(self):
         """Создание прогресс-бара здоровья"""
         self.health_frame = tk.Frame(self.content_frame, bg=self.gradient_colors[0])
-        self.health_frame.pack(pady=20, fill='x')
+        self.health_frame.pack(pady=10, fill='x')
         
         self.health_bar = ttk.Progressbar(
             self.health_frame,
-            length=400,
+            length=300,
             mode='determinate',
             style='Healthy.Horizontal.TProgressbar'
         )
@@ -180,60 +160,25 @@ class NotificationWindow:
         self.health_bar['value'] = 100
 
     def _create_close_button(self):
-        """Создание красивой кнопки закрытия"""
-        style = {
-            'font': ('Arial', 16, 'bold'),
-            'bg': 'white',
-            'fg': self.gradient_colors[0],
-            'relief': tk.FLAT,
-            'padx': 30,
-            'pady': 15,
-            'cursor': 'hand2'  # Курсор в виде руки при наведении
-        }
-        
-        self.close_btn = tk.Button(
+        """Создание кнопки закрытия"""
+        self.close_button = tk.Button(
             self.content_frame,
-            text="Понятно, сделаю перерыв!",
+            text="Понял, сделаю перерыв! 👍",
+            font=("Comic Sans MS", 12),
             command=self.close,
-            **style
+            bg=self.gradient_colors[1],
+            fg=self.gradient_colors[0],
+            relief=tk.FLAT,
+            activebackground=self.gradient_colors[0],
+            activeforeground=self.gradient_colors[1]
         )
-        self.close_btn.pack(pady=20)
-        
-        # Добавляем эффекты при наведении
-        self.close_btn.bind('<Enter>', self._on_button_hover)
-        self.close_btn.bind('<Leave>', self._on_button_leave)
+        self.close_button.pack(pady=10)
 
-    def _position_window(self):
-        """Позиционирование окна в правом нижнем углу"""
-        screen_width = GetSystemMetrics(0)
-        screen_height = GetSystemMetrics(1)
-        window_width = 600
-        window_height = 500
-        x = screen_width - window_width - 20
-        y = screen_height - window_height - 60
-        self.popup.geometry(f"{window_width}x{window_height}+{x}+{y}")
-
-    def _on_button_hover(self, event):
-        """Эффект при наведении на кнопку"""
-        self.close_btn.configure(
-            bg=self.gradient_colors[0],
-            fg='white'
-        )
-
-    def _on_button_leave(self, event):
-        """Эффект при уходе курсора с кнопки"""
-        self.close_btn.configure(
-            bg='white',
-            fg=self.gradient_colors[0]
-        )
-
-    def _animate_icon(self):
+    def animate_icon(self):
         """Анимация иконки"""
-        if hasattr(self, 'icon_label'):
-            self.current_icon = (self.current_icon + 1) % len(self.icons)
-            self.icon_label.configure(text=self.icons[self.current_icon])
-            if self.popup.winfo_exists():
-                self.popup.after(1000, self._animate_icon)
+        self.current_icon = (self.current_icon + 1) % len(self.icons)
+        self.icon_label.config(text=self.icons[self.current_icon])
+        self.popup.after(1000, self.animate_icon)  # Каждую секунду
 
     def _animate_glow(self):
         """Анимация свечения заголовка"""
@@ -248,33 +193,55 @@ class NotificationWindow:
                     self.glow_increasing = True
             
             # Создаем эффект свечения, изменяя размер шрифта
-            size = 36 + int(self.glow_intensity * 4)
-            self.title_label.configure(font=("Arial Black", size, "bold"))
+            size = 28 + int(self.glow_intensity * 4)
+            self.title_label.configure(font=("Comic Sans MS", size, "bold"))
             
             if self.popup.winfo_exists():
                 self.popup.after(50, self._animate_glow)
 
-    def show(self):
-        """Показ уведомления с анимацией"""
+    def show(self, duration=15):
+        """Показать уведомление"""
         try:
+            # Получаем размеры экрана
+            screen_width = GetSystemMetrics(0)
+            screen_height = GetSystemMetrics(1)
+            
+            # Размеры окна
+            window_width = 500
+            window_height = 400
+            
+            # Позиция в правом нижнем углу с отступом 20 пикселей
+            x = screen_width - window_width - 20
+            y = screen_height - window_height - 40  # 40 для учета панели задач
+            
+            # Устанавливаем позицию и убираем рамку
+            self.popup.geometry(f"{window_width}x{window_height}+{x}+{y}")
+            self.popup.attributes('-topmost', True)
+            self.popup.overrideredirect(True)
+            
+            # Обновляем сообщение с именем
+            messages = [
+                f"ЕГОР, давай сделаем перерыв!\nТвои глазки устали от экрана 👀",
+                f"ЕГОР, время размяться!\nПобегай и поиграй немного 🦸‍♂️",
+                f"ЕГОР, пора отдохнуть!\nМожет, поиграем в другую игру? 🎯",
+                f"ЕГОР, перерыв - это здорово!\nПора подвигаться и размяться 🌟"
+            ]
+            self.message.config(text=random.choice(messages))
+            
+            # Показываем окно
             self.popup.deiconify()
             
-            # Анимация появления
-            for i in range(11):
-                self.popup.attributes('-alpha', i/10)
-                self.popup.update()
-                time.sleep(0.02)
-            
-            # Запускаем все анимации
-            self._animate_icon()
+            # Запускаем анимации
+            self.animate_icon()
             self._animate_glow()
             self.blink_window()
             
-            # Воспроизводим звук
-            winsound.PlaySound("SystemExclamation", winsound.SND_ASYNC)
+            # Устанавливаем таймер на автозакрытие
+            self.popup.after(duration * 1000, self.close)
             
         except Exception as e:
-            self.logger.error(f"Error showing notification: {str(e)}")
+            self.logger.error(f"Failed to show notification: {str(e)}")
+            raise
 
     def blink_window(self):
         """Улучшенное мигание окном"""
@@ -293,15 +260,28 @@ class NotificationWindow:
             self.logger.error(f"Error during window blinking: {str(e)}")
 
     def close(self):
-        """Закрытие с плавной анимацией"""
+        """Закрытие окна с анимацией"""
         try:
-            # Анимация исчезновения
+            # Отменяем все отложенные задачи
+            self.popup.after_cancel("all")
+            
+            # Плавно уменьшаем прозрачность
             for i in range(10, -1, -1):
                 self.popup.attributes('-alpha', i/10)
                 self.popup.update()
                 time.sleep(0.02)
+            
+            # Скрываем окно
             self.popup.withdraw()
+            self.popup.update()
             
         except Exception as e:
             self.logger.error(f"Error closing notification: {str(e)}")
-            self.popup.withdraw()  # Принудительно скрываем в случае ошибки
+            try:
+                self.popup.withdraw()
+            except:
+                pass
+
+    def hide(self):
+        """Закрытие окна"""
+        self.close()

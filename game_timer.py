@@ -1,12 +1,11 @@
 import psutil
 import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import simpledialog, ttk
 from threading import Thread
 import json
 import os
 import winsound
-from tkinter import simpledialog
 import keyboard
 import win32gui
 import win32con
@@ -264,14 +263,14 @@ class GameTimerApp:
                 self.settings = Settings()
             except Exception as e:
                 self.logger.error(f"Failed to initialize settings: {str(e)}")
-                messagebox.showerror("Error", "Failed to load settings. Using defaults.")
+                self.show_break_notification("Ошибка", "Failed to load settings. Using defaults.")
                 self.settings = Settings(use_defaults=True)
 
             try:
                 self.process_monitor = ProcessMonitor()
             except Exception as e:
                 self.logger.error(f"Failed to initialize process monitor: {str(e)}")
-                messagebox.showerror("Error", "Failed to initialize process monitoring.")
+                self.show_break_notification("Ошибка", "Failed to initialize process monitoring.")
                 
             self.achievements = Achievements(self.settings)
             self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
@@ -300,7 +299,7 @@ class GameTimerApp:
             
         except Exception as e:
             self.logger.critical(f"Failed to initialize application: {str(e)}")
-            messagebox.showerror("Critical Error", "Failed to initialize application.")
+            self.show_break_notification("Ошибка", f"Failed to initialize application.")
             raise
 
     def setup_tray_icon(self):
@@ -347,7 +346,7 @@ class GameTimerApp:
     def on_closing(self):
         """Обработка закрытия окна"""
         try:
-            if messagebox.askokcancel("Quit", "Minimize to tray instead of closing?"):
+            if self.show_break_notification("Quit", "Minimize to tray instead of closing?"):
                 self.root.withdraw()
             else:
                 self.quit_app()
@@ -541,7 +540,7 @@ class GameTimerApp:
         """Запускает выбранный режим."""
         total_minutes = self.hours.get() * 60 + self.minutes.get()
         if total_minutes <= 0:
-            messagebox.showwarning("Предупреждение", "Пожалуйста, введите время больше 0")
+            self.show_break_notification("Предупреждение", "Пожалуйста, введите время больше 0")
             return
 
         self.remaining_time = total_minutes * 60
@@ -576,7 +575,7 @@ class GameTimerApp:
             self.remaining_time -= 1
             self.root.after(1000, self.update_timer)
         elif self.remaining_time <= 0 and self.running:
-            self.show_message()
+            self.show_break_notification()
 
     def track_games(self):
         """Следит за играми и отслеживает время."""
@@ -618,7 +617,7 @@ class GameTimerApp:
                     start_time = current_time
                     
                 if self.remaining_time <= 0:
-                    self.root.after(0, self.show_message)
+                    self.root.after(0, self.show_break_notification)
                     break
             else:
                 start_time = None
@@ -657,30 +656,21 @@ class GameTimerApp:
         self.pause_button.config(state=tk.DISABLED, text="Пауза")
         self.reset_button.config(state=tk.DISABLED)
 
-    def show_message(self):
-        """Выводит сообщение о завершении времени."""
+    def show_break_notification(self, title="Время вышло!", message="Пора сделать перерыв!"):
+        """Показать уведомление о перерыве"""
         try:
-            # Симулируем нажатие ESC для паузы игры
-            simulate_esc_key()
+            if hasattr(self, 'notification_window'):
+                try:
+                    self.notification_window.close()
+                except:
+                    pass
             
-            # Проигрываем звук
+            self.notification_window = NotificationWindow()
+            self.notification_window.show(duration=15)
             winsound.PlaySound("SystemExclamation", winsound.SND_ASYNC)
             
-            # Создаем и показываем собственное уведомление
-            notification = NotificationWindow()
-            notification.show()
-            
         except Exception as e:
-            print(f"Ошибка показа сообщения: {e}")
-            messagebox.showinfo("Время вышло!", "Пора сделать перерыв!")
-        
-        finally:
-            self.running = False
-            self.timer_label.config(text="Оставшееся время: --:--:--")
-            self.status_label.config(text="Статус: Ожидание")
-            self.start_button.config(state=tk.NORMAL)
-            self.pause_button.config(state=tk.DISABLED, text="Пауза")
-            self.reset_button.config(state=tk.DISABLED)
+            self.logger.error(f"Ошибка показа уведомления: {str(e)}")
 
     def toggle_autostart(self):
         """Переключает автозапуск"""
@@ -715,4 +705,4 @@ if __name__ == "__main__":
         root.mainloop()
     except Exception as e:
         print(f"Критическая ошибка: {e}")
-        messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
+        app.show_break_notification("Ошибка", f"Произошла ошибка: {str(e)}")
