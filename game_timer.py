@@ -25,6 +25,8 @@ import pystray
 from PIL import Image, ImageDraw
 from notification_window import NotificationWindow
 from achievements import Achievements  # Добавляем импорт класса Achievements
+from notification_window import NotificationWindow
+from logger import Logger
 
 class Settings:
     """Класс для работы с настройками"""
@@ -302,6 +304,21 @@ class GameTimerApp:
             self.show_break_notification("Ошибка", f"Failed to initialize application.")
             raise
 
+    def toggle_autostart(self):
+        """Переключение автозапуска"""
+        current_state = self.settings.get("autostart", False)
+        new_state = not current_state
+        self.settings.set("autostart", new_state)
+        self.set_autostart(new_state)
+        if hasattr(self, 'autostart_var'):
+            self.autostart_var.set(new_state)
+        return new_state
+
+    def show_break_notification(self, title, message):
+        """Показать окно уведомления с заданным заголовком и сообщением"""
+        notification = NotificationWindow(self.root, title, message)
+        notification.show()
+    
     def setup_tray_icon(self):
         """Настройка иконки в трее"""
         try:
@@ -575,7 +592,7 @@ class GameTimerApp:
             self.remaining_time -= 1
             self.root.after(1000, self.update_timer)
         elif self.remaining_time <= 0 and self.running:
-            self.show_break_notification()
+            self.show_break_notification("Время вышло", "Пора сделать перерыв!")
 
     def track_games(self):
         """Следит за играми и отслеживает время."""
@@ -656,27 +673,18 @@ class GameTimerApp:
         self.pause_button.config(state=tk.DISABLED, text="Пауза")
         self.reset_button.config(state=tk.DISABLED)
 
-    def show_break_notification(self, title="Время вышло!", message="Пора сделать перерыв!"):
-        """Показать уведомление о перерыве"""
-        try:
-            if hasattr(self, 'notification_window'):
-                try:
-                    self.notification_window.close()
-                except:
-                    pass
+def show_break_notification(self, title, message):
+    try:
+        if not hasattr(self, 'notification_window'):
+            self.notification_window = NotificationWindow(
+                parent=self.root,
+                title=title,
+                message=message
+            )
+        self.notification_window.show()
+    except Exception as e:
+        self.logger.error(f"Ошибка показа уведомления: {str(e)}")
             
-            self.notification_window = NotificationWindow()
-            self.notification_window.show(duration=15)
-            winsound.PlaySound("SystemExclamation", winsound.SND_ASYNC)
-            
-        except Exception as e:
-            self.logger.error(f"Ошибка показа уведомления: {str(e)}")
-
-    def toggle_autostart(self):
-        """Переключает автозапуск"""
-        autostart = self.autostart_var.get()
-        self.settings.set("autostart", autostart)
-        self.set_autostart(autostart)
 
 def simulate_esc_key():
     """Симулирует нажатие клавиши ESC"""
