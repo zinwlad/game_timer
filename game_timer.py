@@ -24,11 +24,13 @@ from logger import Logger
 import pystray
 from PIL import Image, ImageDraw
 from notification_window import NotificationWindow
-from achievements import Achievements  # Добавляем импорт класса Achievements
+from achievements import Achievements
 from notification_window import NotificationWindow
 from logger import Logger
 from settings import Settings
 from process_monitor import ProcessMonitor
+from hotkey_manager import HotkeyManager
+from ui_manager import UIManager
 
 class GameTimerApp:
     def __init__(self, root):
@@ -41,6 +43,10 @@ class GameTimerApp:
             self.logger = Logger("GameTimerApp", "logs/game_timer.log")
             self.root = root
             self.root.title("Game Timer")
+            
+            # Инициализируем менеджеры
+            self.hotkey_manager = HotkeyManager()
+            self.ui_manager = UIManager(root)
             
             # Настраиваем стиль
             self.style = ttk.Style()
@@ -173,6 +179,12 @@ class GameTimerApp:
     def quit_app(self):
         """Полное закрытие приложения"""
         try:
+            # Останавливаем менеджеры
+            if hasattr(self, 'hotkey_manager'):
+                self.hotkey_manager.clear_all_hotkeys()
+            if hasattr(self, 'ui_manager'):
+                self.ui_manager.stop()
+                
             if hasattr(self, 'tray_icon'):
                 self.tray_icon.stop()
             self.root.quit()
@@ -195,12 +207,22 @@ class GameTimerApp:
             self.style.configure("TButton", background='#e0e0e0', foreground='black')
 
     def setup_hotkeys(self):
-        """Настройка горячих клавиш"""
+        """Настройка горячих клавиш с использованием менеджера"""
         try:
-            keyboard.add_hotkey(self.settings.get("hotkeys")["pause"], self.pause_resume_timer)
-            keyboard.add_hotkey(self.settings.get("hotkeys")["reset"], self.reset_timer)
+            # Добавляем горячие клавиши через менеджер
+            self.hotkey_manager.add_hotkey(
+                self.settings.get("hotkeys")["pause"],
+                self.pause_resume_timer,
+                cooldown=0.3  # Добавляем задержку 300мс между срабатываниями
+            )
+            self.hotkey_manager.add_hotkey(
+                self.settings.get("hotkeys")["reset"],
+                self.reset_timer,
+                cooldown=0.5  # Добавляем задержку 500мс между срабатываниями
+            )
+            self.logger.info("Hotkeys setup completed")
         except Exception as e:
-            print(f"Ошибка настройки горячих клавиш: {e}")
+            self.logger.error(f"Error setting up hotkeys: {e}")
 
     def check_autostart(self):
         """Проверка и настройка автозапуска"""
@@ -340,6 +362,12 @@ class GameTimerApp:
                                    font=("Arial", 12))
         self.status_label.grid(row=8, column=0, padx=20, pady=5, sticky="ew")
 
+        # Регистрируем виджеты в UI менеджере
+        self.ui_manager.register_widget('timer', self.timer_label)
+        self.ui_manager.register_widget('progress', self.progress)
+        self.ui_manager.register_widget('status', self.status_label)
+        self.ui_manager.register_widget('process_list', self.process_status, 2.0)
+
     def set_preset(self, hours, minutes):
         """Устанавливает предустановленное время."""
         self.hours.set(hours)
@@ -386,20 +414,38 @@ class GameTimerApp:
     def update_timer(self):
         """Обновляет обратный отсчет времени."""
         if self.remaining_time > 0 and self.running and not self.paused:
-            hours, remainder = divmod(self.remaining_time, 3600)
-            mins, secs = divmod(remainder, 60)
-            self.timer_label.config(text=f"Оставшееся время: {int(hours):02}:{int(mins):02}:{int(secs):02}")
-            self.progress['value'] = self.remaining_time
+            # Обновляем данные через UI менеджер
+            self.ui_manager.queue_update('timer', self.remaining_time)
+            self.ui_manager.queue_update('progress', self.remaining_time)
             self.remaining_time -= 1
             self.root.after(1000, self.update_timer)
         elif self.remaining_time <= 0 and self.running:
             self.show_break_notification("Время вышло", "Пора сделать перерыв!")
+
+    def update_timer_display(self):
+        """Метод больше не используется напрямую"""
+        pass
+
+    def update_ui_status(self, status):
+        """Обновляет статус в UI"""
+        self.ui_manager.queue_update('status', status)
+
+    def update_process_status(self):
+        """Обновляет информацию о запущенных процессах"""
+        active_processes = [p for p in self.process_monitor.get_active_processes()
+                          if p in self.settings.get("processes")]
+        if active_processes:
+            processes_text = ', '.join(active_processes)
+        else:
+            processes_text = "нет"
+        self.ui_manager.queue_update('process_list', processes_text)
 
     def track_games(self):
         """Следит за играми и отслеживает время."""
         start_time = None
         last_update = 0
         update_interval = self.settings.get("ui_update_interval") / 1000  # в секундах
+        poll_interval = 0.75  # увеличиваем интервал опроса до 750мс
         
         while self.running and not self.paused:
             current_time = time.time()
@@ -419,7 +465,7 @@ class GameTimerApp:
                 if current_time - last_update >= update_interval:
                     elapsed = current_time - start_time
                     self.remaining_time -= elapsed
-                    self.progress['value'] = self.remaining_time
+                    self.ui_manager.queue_update('progress', self.remaining_time)
                     
                     # Обновляем статистику использования
                     active_processes = [p for p in self.process_monitor.get_active_processes()
@@ -428,32 +474,21 @@ class GameTimerApp:
                         self.process_monitor.log_usage(process, elapsed)
                     
                     # Обновляем UI
-                    self.root.after(0, self.update_ui_status, "Игра запущена")
-                    self.root.after(0, self.update_timer_display)
+                    self.ui_manager.queue_update('status', "Игра запущена")
+                    self.ui_manager.queue_update('timer', self.remaining_time)
                     
                     last_update = current_time
                     start_time = current_time
                     
                 if self.remaining_time <= 0:
-                    self.root.after(0, self.show_break_notification)
+                    self.show_break_notification("Время вышло", "Пора сделать перерыв!")
                     break
             else:
                 start_time = None
-                self.root.after(0, self.update_ui_status, "Игра не запущена")
+                self.ui_manager.queue_update('status', "Игра не запущена")
             
-            # Используем короткие интервалы сна
-            time.sleep(0.1)
-
-    def update_ui_status(self, status):
-        """Обновляет статус в UI"""
-        self.status_label.config(text=f"Статус: {status}")
-
-    def update_timer_display(self):
-        """Обновляет отображение таймера"""
-        hours, remainder = divmod(int(self.remaining_time), 3600)
-        mins, secs = divmod(remainder, 60)
-        self.timer_label.config(
-            text=f"Оставшееся время: {hours:02}:{mins:02}:{secs:02}")
+            # Используем увеличенный интервал сна
+            time.sleep(poll_interval)
 
     def pause_resume_timer(self):
         """Приостанавливает или возобновляет таймер."""
