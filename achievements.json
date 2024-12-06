@@ -1,0 +1,34 @@
+{
+    "achievements": {
+        "early_bird": {
+            "unlocked": false,
+            "unlocked_at": null,
+            "progress": 0
+        },
+        "consistent_breaks": {
+            "unlocked": false,
+            "unlocked_at": null,
+            "progress": 2
+        },
+        "perfect_timing": {
+            "unlocked": false,
+            "unlocked_at": null,
+            "progress": 2
+        },
+        "health_master": {
+            "unlocked": false,
+            "unlocked_at": null,
+            "progress": 0
+        },
+        "night_owl": {
+            "unlocked": false,
+            "unlocked_at": null,
+            "progress": 0
+        },
+        "weekend_warrior": {
+            "unlocked": false,
+            "unlocked_at": null,
+            "progress": 0
+        }
+    }
+}

@@ -123,7 +123,7 @@ class NotificationWindow:
             winsound.PlaySound("SystemExclamation", winsound.SND_ASYNC)
             
             # Автозакрытие через duration секунд
-            self.popup.after(duration * 1000, self.close)
+            self.auto_close_id = self.popup.after(duration * 1000, self.close)
             
         except Exception as e:
             self.logger.error(f"Failed to show notification: {str(e)}")
@@ -132,6 +132,10 @@ class NotificationWindow:
     def close(self):
         """Закрытие окна"""
         try:
+            # Отменяем автозакрытие если оно было запланировано
+            if hasattr(self, 'auto_close_id'):
+                self.popup.after_cancel(self.auto_close_id)
+                del self.auto_close_id
             self.popup.withdraw()
         except Exception as e:
             self.logger.error(f"Error closing notification: {str(e)}")

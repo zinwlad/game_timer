@@ -21,7 +21,6 @@ from datetime import datetime, timedelta
 import sqlite3
 import os.path
 from logger import Logger
-import pystray
 from PIL import Image, ImageDraw
 from notification_window import NotificationWindow
 from achievements import Achievements
@@ -31,6 +30,11 @@ from settings import Settings
 from process_monitor import ProcessMonitor
 from hotkey_manager import HotkeyManager
 from ui_manager import UIManager
+from tray_manager import TrayManager
+from theme_manager import ThemeManager
+from autostart_manager import AutostartManager
+from activity_monitor import ActivityMonitor
+from achievement_manager import AchievementManager
 
 class GameTimerApp:
     def __init__(self, root):
@@ -44,16 +48,23 @@ class GameTimerApp:
             self.root = root
             self.root.title("Game Timer")
             
-            # Инициализируем менеджеры
-            self.hotkey_manager = HotkeyManager()
-            self.ui_manager = UIManager(root)
-            
             # Настраиваем стиль
             self.style = ttk.Style()
             self.style.theme_use('default')
             
-            # Добавляем иконку в трей
-            self.setup_tray_icon()
+            # Инициализируем менеджеры
+            self.settings = self._init_settings()
+            self.theme_manager = ThemeManager(root, self.style)
+            self.hotkey_manager = HotkeyManager()
+            self.ui_manager = UIManager(root)
+            self.tray_manager = TrayManager(
+                show_window_callback=self.show_window,
+                quit_callback=self.quit_app
+            )
+            self.autostart_manager = AutostartManager()
+            self.activity_monitor = ActivityMonitor(self.settings)
+            self.process_monitor = self._init_process_monitor()
+            self.achievement_manager = AchievementManager(self.settings, root)
             
             # Делаем окно адаптивным
             self.root.grid_columnconfigure(0, weight=1)
@@ -64,27 +75,7 @@ class GameTimerApp:
             main_frame.grid(sticky="nsew", padx=10, pady=10)
             main_frame.grid_columnconfigure(0, weight=1)
             
-            # Инициализация компонентов с обработкой исключений
-            try:
-                self.settings = Settings()
-            except Exception as e:
-                self.logger.error(f"Failed to initialize settings: {str(e)}")
-                self.show_break_notification("Ошибка", "Failed to load settings. Using defaults.")
-                self.settings = Settings(use_defaults=True)
-
-            try:
-                self.process_monitor = ProcessMonitor()
-            except Exception as e:
-                self.logger.error(f"Failed to initialize process monitor: {str(e)}")
-                self.show_break_notification("Ошибка", "Failed to initialize process monitoring.")
-                
-            self.achievements = Achievements(self.settings)
             self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
-            
-            # Переменные для отслеживания активности
-            self.last_mouse_pos = pyautogui.position()
-            self.last_activity = time.time()
-            self.logger.debug(f"last_activity initialized: {self.last_activity}")
             
             # Остальные переменные
             self.mode = tk.StringVar(value=self.settings.get("mode"))
@@ -98,6 +89,9 @@ class GameTimerApp:
             self.setup_hotkeys()
             self.check_autostart()
             
+            # Применяем тему
+            self.theme_manager.apply_theme(self.settings.get("theme", "light"))
+            
             # Запускаем мониторинг активности
             self.root.after(1000, self.check_user_activity)
             
@@ -109,61 +103,63 @@ class GameTimerApp:
             self.show_break_notification("Ошибка", f"Failed to initialize application.")
             raise
 
+    def _init_settings(self):
+        """Инициализация настроек"""
+        try:
+            return Settings()
+        except Exception as e:
+            self.logger.error(f"Failed to initialize settings: {str(e)}")
+            self.show_break_notification("Ошибка", "Failed to load settings. Using defaults.")
+            return Settings(use_defaults=True)
+
+    def _init_process_monitor(self):
+        """Инициализация монитора процессов"""
+        try:
+            return ProcessMonitor()
+        except Exception as e:
+            self.logger.error(f"Failed to initialize process monitor: {str(e)}")
+            self.show_break_notification("Ошибка", "Failed to initialize process monitoring.")
+            return None
+
     def toggle_autostart(self):
         """Переключение автозапуска"""
         current_state = self.settings.get("autostart", False)
         new_state = not current_state
-        self.settings.set("autostart", new_state)
-        self.set_autostart(new_state)
-        if hasattr(self, 'autostart_var'):
-            self.autostart_var.set(new_state)
+        if self.autostart_manager.set_autostart(new_state):
+            self.settings.set("autostart", new_state)
+            if hasattr(self, 'autostart_var'):
+                self.autostart_var.set(new_state)
         return new_state
+
+    def check_autostart(self):
+        """Проверка и настройка автозапуска"""
+        if self.settings.get("autostart"):
+            self.autostart_manager.set_autostart(True)
+
+    def check_user_activity(self):
+        """Проверка активности пользователя"""
+        is_active, inactivity_duration = self.activity_monitor.check_activity()
+        
+        if not is_active and not self.paused and self.running:
+            self.pause_resume_timer()
+            self.ui_manager.queue_update('status', "Статус: Приостановлено (нет активности)")
+
+        # Обновляем статус процессов
+        self.update_process_status()
+
+        # Планируем следующую проверку
+        self.root.after(1000, self.check_user_activity)
 
     def show_break_notification(self, title, message):
         """Показать окно уведомления с заданным заголовком и сообщением"""
         notification = NotificationWindow(self.root, title, message)
         notification.show()
     
-    def setup_tray_icon(self):
-        """Настройка иконки в трее"""
-        try:
-            self.tray_icon = pystray.Icon("Game Timer")
-            self.tray_icon.icon = self.create_tray_icon()
-            menu_items = (
-                pystray.MenuItem("Show", self.show_window),
-                pystray.MenuItem("Exit", self.quit_app)
-            )
-            self.tray_icon.menu = pystray.Menu(*menu_items)
-            Thread(target=self.tray_icon.run, daemon=True).start()
-        except Exception as e:
-            self.logger.error(f"Failed to setup tray icon: {str(e)}")
-
-    def create_tray_icon(self):
-        """Создание иконки для трея"""
-        try:
-            # Создаем простую иконку
-            width = 64
-            height = 64
-            color1 = 'blue'
-            color2 = 'white'
-            
-            image = Image.new('RGB', (width, height), color1)
-            dc = ImageDraw.Draw(image)
-            dc.ellipse([10, 10, width-10, height-10], fill=color2)
-            
-            return image
-        except Exception as e:
-            self.logger.error(f"Failed to create tray icon: {str(e)}")
-            return None
-
     def show_window(self):
-        """Показать окно из трея"""
-        try:
-            self.root.deiconify()
-            self.root.lift()
-            self.root.focus_force()
-        except Exception as e:
-            self.logger.error(f"Failed to show window: {str(e)}")
+        """Показывает главное окно"""
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
 
     def on_closing(self):
         """Обработка закрытия окна"""
@@ -184,9 +180,9 @@ class GameTimerApp:
                 self.hotkey_manager.clear_all_hotkeys()
             if hasattr(self, 'ui_manager'):
                 self.ui_manager.stop()
+            if hasattr(self, 'tray_manager'):
+                self.tray_manager.stop()
                 
-            if hasattr(self, 'tray_icon'):
-                self.tray_icon.stop()
             self.root.quit()
         except Exception as e:
             self.logger.error(f"Error during app quit: {str(e)}")
@@ -223,61 +219,6 @@ class GameTimerApp:
             self.logger.info("Hotkeys setup completed")
         except Exception as e:
             self.logger.error(f"Error setting up hotkeys: {e}")
-
-    def check_autostart(self):
-        """Проверка и настройка автозапуска"""
-        if self.settings.get("autostart"):
-            self.set_autostart(True)
-
-    def set_autostart(self, enable=True):
-        """Включение/выключение автозапуска"""
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
-            if enable:
-                winreg.SetValueEx(key, "GameTimer", 0, winreg.REG_SZ, sys.argv[0])
-            else:
-                winreg.DeleteValue(key, "GameTimer")
-            winreg.CloseKey(key)
-        except Exception as e:
-            print(f"Ошибка настройки автозапуска: {e}")
-
-    def check_user_activity(self):
-        """Проверка активности пользователя с помощью pyautogui"""
-        current_pos = pyautogui.position()
-        current_time = time.time()
-
-        # Убедимся, что last_activity всегда имеет корректное значение
-        if self.last_activity is None:
-            self.last_activity = current_time
-
-        # Проверяем движение мыши и активность клавиатуры
-        if current_pos != self.last_mouse_pos or any(keyboard.is_pressed(key) for key in self.settings.get("hotkeys", {}).values()):
-            self.last_activity = current_time
-            self.last_mouse_pos = current_pos
-
-        # Если превышен таймаут неактивности
-        inactivity_timeout = self.settings.get("inactivity_timeout", 300)
-        if current_time - self.last_activity > inactivity_timeout:
-            if not self.paused and self.running:
-                self.pause_resume_timer()
-                self.status_label.config(text="Статус: Приостановлено (нет активности)")
-
-        # Обновляем статус процессов
-        self.update_process_status()
-
-        # Планируем следующую проверку
-        self.root.after(1000, self.check_user_activity)
-
-    def update_process_status(self):
-        """Обновляет информацию о запущенных процессах"""
-        active_processes = [p for p in self.process_monitor.get_active_processes()
-                          if p in self.settings.get("processes")]
-        if active_processes:
-            self.process_status.config(
-                text=f"Активные процессы: {', '.join(active_processes)}")
-        else:
-            self.process_status.config(text="Активные процессы: нет")
 
     def create_widgets(self, parent):
         """Создает адаптивный интерфейс"""
@@ -420,6 +361,10 @@ class GameTimerApp:
             self.remaining_time -= 1
             self.root.after(1000, self.update_timer)
         elif self.remaining_time <= 0 and self.running:
+            # Проверяем достижения при завершении таймера
+            self.achievement_manager.check_achievements({
+                'current_time': datetime.now()
+            })
             self.show_break_notification("Время вышло", "Пора сделать перерыв!")
 
     def update_timer_display(self):
@@ -443,35 +388,35 @@ class GameTimerApp:
     def track_games(self):
         """Следит за играми и отслеживает время."""
         start_time = None
-        last_update = 0
-        update_interval = self.settings.get("ui_update_interval") / 1000  # в секундах
-        poll_interval = 0.75  # увеличиваем интервал опроса до 750мс
-        
+        last_update = time.time()
+        poll_interval = 1.0  # интервал проверки в секундах
+
         while self.running and not self.paused:
-            current_time = time.time()
+            active_processes = [p for p in self.process_monitor.get_active_processes()
+                            if p in self.settings.get("processes")]
             
-            # Проверяем процессы через executor
-            future = self.executor.submit(
-                self.process_monitor.is_process_running,
-                self.settings.get("processes")
-            )
-            game_running = future.result()
-            
-            if game_running:
+            if active_processes:
+                current_time = time.time()
+                
                 if start_time is None:
                     start_time = current_time
-                    
-                # Обновляем UI только с заданным интервалом
+                
+                # Обновляем UI и проверяем достижения каждые N секунд
+                update_interval = 5  # интервал обновления в секундах
                 if current_time - last_update >= update_interval:
                     elapsed = current_time - start_time
                     self.remaining_time -= elapsed
                     self.ui_manager.queue_update('progress', self.remaining_time)
                     
                     # Обновляем статистику использования
-                    active_processes = [p for p in self.process_monitor.get_active_processes()
-                                     if p in self.settings.get("processes")]
                     for process in active_processes:
                         self.process_monitor.log_usage(process, elapsed)
+                    
+                    # Проверяем достижения
+                    self.achievement_manager.add_break_time(int(elapsed))
+                    self.achievement_manager.check_achievements({
+                        'current_time': datetime.now()
+                    })
                     
                     # Обновляем UI
                     self.ui_manager.queue_update('status', "Игра запущена")
@@ -479,7 +424,8 @@ class GameTimerApp:
                     
                     last_update = current_time
                     start_time = current_time
-                    
+                
+                # Проверяем окончание времени
                 if self.remaining_time <= 0:
                     self.show_break_notification("Время вышло", "Пора сделать перерыв!")
                     break
