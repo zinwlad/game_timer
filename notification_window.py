@@ -60,7 +60,10 @@ class NotificationWindow:
             bg=self.bg_color,
             fg=self.text_color
         )
-        self.title_label.pack(pady=(0, 20))
+        self.title_label.grid(row=0, column=0, pady=(0, 20), sticky="nsew")
+        
+        # Настраиваем веса для центрирования
+        self.content_frame.grid_columnconfigure(0, weight=1)
 
     def _create_message(self):
         """Создание сообщения"""
@@ -80,7 +83,10 @@ class NotificationWindow:
             fg=self.text_color,
             justify=tk.CENTER
         )
-        self.message_label.pack(pady=(0, 30))
+        self.message_label.grid(row=1, column=0, pady=(0, 30), sticky="nsew")
+        
+        # Настраиваем веса для центрирования
+        self.content_frame.grid_columnconfigure(0, weight=1)
 
     def _create_close_button(self):
         """Создание кнопки закрытия"""
@@ -95,7 +101,10 @@ class NotificationWindow:
             width=15,
             cursor="hand2"
         )
-        self.close_button.pack(pady=10)
+        self.close_button.grid(row=2, column=0, pady=10, sticky="nsew")
+        
+        # Настраиваем веса для центрирования
+        self.content_frame.grid_columnconfigure(0, weight=1)
 
     def show(self, duration=15):
         """Показать уведомление"""
@@ -106,7 +115,7 @@ class NotificationWindow:
             
             # Размеры окна
             window_width = 450
-            window_height = 300
+            window_height = 350
             
             # Позиция в правом нижнем углу с отступом
             x = screen_width - window_width - 20

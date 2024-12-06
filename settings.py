@@ -12,7 +12,7 @@ class Settings:
             "minutes": 0,
             "processes": ["game.exe", "minecraft.exe", "CorelDRW.exe"],
             "presets": {
-                "Короткий перерыв": {"hours": 0, "minutes": 30},
+                "30 минут": {"hours": 0, "minutes": 30},
                 "1 час": {"hours": 1, "minutes": 0},
                 "2 часа": {"hours": 2, "minutes": 0}
             },

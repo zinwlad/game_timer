@@ -1,7 +1,7 @@
 import psutil
 import time
 import tkinter as tk
-from tkinter import simpledialog, ttk
+from tkinter import simpledialog, ttk, messagebox
 from threading import Thread
 import json
 import os
@@ -35,6 +35,7 @@ from theme_manager import ThemeManager
 from autostart_manager import AutostartManager
 from activity_monitor import ActivityMonitor
 from achievement_manager import AchievementManager
+from timer_notifications import TimerNotifications
 
 class GameTimerApp:
     def __init__(self, root):
@@ -65,6 +66,7 @@ class GameTimerApp:
             self.activity_monitor = ActivityMonitor(self.settings)
             self.process_monitor = self._init_process_monitor()
             self.achievement_manager = AchievementManager(self.settings, root)
+            self.notifications = TimerNotifications(self.root)
             
             # Делаем окно адаптивным
             self.root.grid_columnconfigure(0, weight=1)
@@ -205,20 +207,43 @@ class GameTimerApp:
     def setup_hotkeys(self):
         """Настройка горячих клавиш с использованием менеджера"""
         try:
-            # Добавляем горячие клавиши через менеджер
-            self.hotkey_manager.add_hotkey(
-                self.settings.get("hotkeys")["pause"],
-                self.pause_resume_timer,
-                cooldown=0.3  # Добавляем задержку 300мс между срабатываниями
-            )
-            self.hotkey_manager.add_hotkey(
-                self.settings.get("hotkeys")["reset"],
-                self.reset_timer,
-                cooldown=0.5  # Добавляем задержку 500мс между срабатываниями
-            )
-            self.logger.info("Hotkeys setup completed")
+            # Добавляем горячие клавиши для продления времени
+            self.hotkey_manager.add_hotkey('ctrl+alt+5', lambda: self.add_time(5))
+            self.hotkey_manager.add_hotkey('ctrl+alt+0', lambda: self.add_time(10))
+            self.hotkey_manager.add_hotkey('ctrl+space', self.toggle_pause)
         except Exception as e:
-            self.logger.error(f"Error setting up hotkeys: {e}")
+            self.logger.error(f"Failed to setup hotkeys: {str(e)}")
+            
+    def add_time(self, minutes: int):
+        """Добавляет время к таймеру"""
+        if not self.running:
+            return
+            
+        # Проверяем лимит продлений (максимум 3)
+        if not hasattr(self, 'extensions_count'):
+            self.extensions_count = 0
+            
+        if self.extensions_count >= 3:
+            self.notifications.show_extension_limit()
+            return
+            
+        self.remaining_time += minutes * 60
+        self.extensions_count += 1
+        self.notifications.show_extension_success(minutes, 3 - self.extensions_count)
+        self.update_timer_display()
+        
+    def toggle_pause(self):
+        """Ставит таймер на паузу или снимает с паузы"""
+        if not self.running:
+            return
+            
+        self.paused = not self.paused
+        self.notifications.show_pause_status(self.paused)
+        
+        if self.paused:
+            self.pause_button.config(text="Продолжить")
+        else:
+            self.pause_button.config(text="Пауза")
 
     def create_widgets(self, parent):
         """Создает адаптивный интерфейс"""
@@ -230,7 +255,7 @@ class GameTimerApp:
         ttk.Label(title_frame, text="Game Timer", 
                  font=("Comic Sans MS", 24, "bold")).grid(row=0, column=0)
         
-        # Фрейм для пресетов (используем grid вместо pack)
+        # Фрейм для пресетов
         preset_frame = ttk.Frame(parent)
         preset_frame.grid(row=1, column=0, sticky="ew", pady=5)
         preset_frame.grid_columnconfigure(1, weight=1)
@@ -273,13 +298,9 @@ class GameTimerApp:
         ttk.Entry(time_frame, textvariable=self.minutes, width=5).grid(row=0, column=2, padx=2)
         ttk.Label(time_frame, text="минут").grid(row=0, column=3, padx=2)
 
-        # Прогресс-бар
-        self.progress = ttk.Progressbar(parent, length=400, mode='determinate')
-        self.progress.grid(row=5, column=0, padx=20, pady=20, sticky="ew")
-
         # Кнопки управления
         btn_frame = ttk.Frame(parent)
-        btn_frame.grid(row=6, column=0, padx=20, pady=10, sticky="ew")
+        btn_frame.grid(row=5, column=0, padx=20, pady=10, sticky="ew")
         
         self.start_button = ttk.Button(btn_frame, text="Начать", command=self.start_timer)
         self.start_button.grid(row=0, column=0, padx=5)
@@ -296,18 +317,17 @@ class GameTimerApp:
         # Отображение времени
         self.timer_label = tk.Label(parent, text="Оставшееся время: --:--:--",
                                   font=("Arial", 16, "bold"))
-        self.timer_label.grid(row=7, column=0, padx=20, pady=10, sticky="ew")
+        self.timer_label.grid(row=6, column=0, padx=20, pady=10, sticky="ew")
 
         # Статус
         self.status_label = tk.Label(parent, text="Статус: Ожидание",
                                    font=("Arial", 12))
-        self.status_label.grid(row=8, column=0, padx=20, pady=5, sticky="ew")
+        self.status_label.grid(row=7, column=0, padx=20, pady=5, sticky="ew")
 
         # Регистрируем виджеты в UI менеджере
         self.ui_manager.register_widget('timer', self.timer_label)
-        self.ui_manager.register_widget('progress', self.progress)
         self.ui_manager.register_widget('status', self.status_label)
-        self.ui_manager.register_widget('process_list', self.process_status, 2.0)
+        self.ui_manager.register_widget('process_list', self.process_status)
 
     def set_preset(self, hours, minutes):
         """Устанавливает предустановленное время."""
@@ -325,41 +345,60 @@ class GameTimerApp:
 
     def start_timer(self):
         """Запускает выбранный режим."""
-        total_minutes = self.hours.get() * 60 + self.minutes.get()
-        if total_minutes <= 0:
-            self.show_break_notification("Предупреждение", "Пожалуйста, введите время больше 0")
-            return
-
-        self.remaining_time = total_minutes * 60
-        self.initial_time = self.remaining_time
-        self.running = True
-        self.paused = False
-        self.progress['maximum'] = self.initial_time
-        self.progress['value'] = self.initial_time
-        
-        # Сохраняем настройки
-        self.settings.set("mode", self.mode.get())
-        self.settings.set("hours", self.hours.get())
-        self.settings.set("minutes", self.minutes.get())
-
-        # Обновляем состояние кнопок
-        self.start_button.config(state=tk.DISABLED)
-        self.pause_button.config(state=tk.NORMAL)
-        self.reset_button.config(state=tk.NORMAL)
-
-        if self.mode.get() == "timer":
-            self.update_timer()
-        else:
-            Thread(target=self.track_games).start()
+        try:
+            # Проверяем корректность введенных значений
+            hours = self.hours.get()
+            minutes = self.minutes.get()
+            
+            if hours < 0 or minutes < 0:
+                messagebox.showerror("Ошибка", "Время не может быть отрицательным")
+                return
+                
+            if hours == 0 and minutes == 0:
+                messagebox.showerror("Ошибка", "Установите время больше нуля")
+                return
+            
+            # Сохраняем настройки
+            self.settings.set("hours", hours)
+            self.settings.set("minutes", minutes)
+            self.settings.save()
+            
+            # Устанавливаем время
+            self.remaining_time = hours * 3600 + minutes * 60
+            self.running = True
+            self.paused = False
+            
+            # Обновляем состояние кнопок
+            self.start_button.config(state=tk.DISABLED)
+            self.pause_button.config(state=tk.NORMAL)
+            self.reset_button.config(state=tk.NORMAL)
+            
+            # Запускаем отслеживание в зависимости от режима
+            if self.mode.get() == "track":
+                self.executor.submit(self.track_games)
+            else:
+                self.update_timer()
+                
+            # Показываем уведомление о запуске
+            self.notifications.show_timer_start(hours, minutes)
+            
+        except Exception as e:
+            self.logger.error(f"Error starting timer: {str(e)}")
+            messagebox.showerror("Ошибка", f"Не удалось запустить таймер: {str(e)}")
 
     def update_timer(self):
         """Обновляет обратный отсчет времени."""
         if self.remaining_time > 0 and self.running and not self.paused:
             # Обновляем данные через UI менеджер
             self.ui_manager.queue_update('timer', self.remaining_time)
-            self.ui_manager.queue_update('progress', self.remaining_time)
             self.remaining_time -= 1
+            
+            # Проверяем статус процессов каждые 30 секунд
+            if self.remaining_time % 30 == 0:
+                self.update_process_status()
+            
             self.root.after(1000, self.update_timer)
+            
         elif self.remaining_time <= 0 and self.running:
             # Проверяем достижения при завершении таймера
             self.achievement_manager.check_achievements({
@@ -387,54 +426,59 @@ class GameTimerApp:
 
     def track_games(self):
         """Следит за играми и отслеживает время."""
-        start_time = None
-        last_update = time.time()
-        poll_interval = 1.0  # интервал проверки в секундах
-
-        while self.running and not self.paused:
-            active_processes = [p for p in self.process_monitor.get_active_processes()
-                            if p in self.settings.get("processes")]
-            
-            if active_processes:
+        check_interval = self.settings.get("check_interval", 30)  # проверяем каждые 30 секунд
+        log_interval = self.settings.get("log_interval", 300)    # логируем каждые 5 минут
+        last_log_time = time.time()
+        last_update_time = time.time()
+        
+        while self.running:
+            try:
                 current_time = time.time()
+                elapsed = current_time - last_update_time
                 
-                if start_time is None:
-                    start_time = current_time
-                
-                # Обновляем UI и проверяем достижения каждые N секунд
-                update_interval = 5  # интервал обновления в секундах
-                if current_time - last_update >= update_interval:
-                    elapsed = current_time - start_time
+                if not self.paused:
+                    # Уменьшаем оставшееся время
                     self.remaining_time -= elapsed
-                    self.ui_manager.queue_update('progress', self.remaining_time)
                     
-                    # Обновляем статистику использования
-                    for process in active_processes:
-                        self.process_monitor.log_usage(process, elapsed)
-                    
-                    # Проверяем достижения
-                    self.achievement_manager.add_break_time(int(elapsed))
-                    self.achievement_manager.check_achievements({
-                        'current_time': datetime.now()
-                    })
-                    
-                    # Обновляем UI
-                    self.ui_manager.queue_update('status', "Игра запущена")
+                    # Обновляем UI таймера
                     self.ui_manager.queue_update('timer', self.remaining_time)
                     
-                    last_update = current_time
-                    start_time = current_time
+                    # Проверяем окончание времени
+                    if self.remaining_time <= 0:
+                        self.show_break_notification("Время вышло", "Пора сделать перерыв!")
+                        break
                 
-                # Проверяем окончание времени
-                if self.remaining_time <= 0:
-                    self.show_break_notification("Время вышло", "Пора сделать перерыв!")
-                    break
-            else:
-                start_time = None
-                self.ui_manager.queue_update('status', "Игра не запущена")
-            
-            # Используем увеличенный интервал сна
-            time.sleep(poll_interval)
+                # Проверяем процессы с увеличенным интервалом
+                active_processes = [p for p in self.process_monitor.get_active_processes()
+                                if p in self.settings.get("processes")]
+                
+                # Обновляем UI со статусом процессов
+                if active_processes:
+                    processes_text = ', '.join(active_processes)
+                    self.ui_manager.queue_update('status', f"Запущены: {processes_text}")
+                    
+                    # Логируем использование с большим интервалом
+                    if current_time - last_log_time >= log_interval:
+                        for process in active_processes:
+                            self.process_monitor.log_usage(process, log_interval)
+                        last_log_time = current_time
+                        
+                        # Проверяем достижения при логировании
+                        self.achievement_manager.check_achievements({
+                            'current_time': datetime.now()
+                        })
+                else:
+                    self.ui_manager.queue_update('status', "Игра не запущена")
+                
+                # Обновляем время последнего обновления
+                last_update_time = current_time
+                
+                # Спим указанный интервал
+                time.sleep(check_interval)
+                
+            except Exception as e:
+                self.logger.error(f"Error in track_games: {str(e)}")
+                time.sleep(check_interval)  # В случае ошибки тоже ждем
 
     def pause_resume_timer(self):
         """Приостанавливает или возобновляет таймер."""
@@ -448,7 +492,6 @@ class GameTimerApp:
         self.running = False
         self.paused = False
         self.remaining_time = 0
-        self.progress['value'] = 0
         self.timer_label.config(text="Оставшееся время: --:--:--")
         self.status_label.config(text="Статус: Ожидание")
         self.start_button.config(state=tk.NORMAL)

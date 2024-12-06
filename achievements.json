@@ -6,19 +6,19 @@
             "progress": 0
         },
         "consistent_breaks": {
-            "unlocked": false,
-            "unlocked_at": null,
-            "progress": 2
+            "unlocked": true,
+            "unlocked_at": "2024-12-06 13:18:09",
+            "progress": 5
         },
         "perfect_timing": {
-            "unlocked": false,
-            "unlocked_at": null,
-            "progress": 2
+            "unlocked": true,
+            "unlocked_at": "2024-12-06 13:22:22",
+            "progress": 10
         },
         "health_master": {
             "unlocked": false,
             "unlocked_at": null,
-            "progress": 0
+            "progress": 65
         },
         "night_owl": {
             "unlocked": false,

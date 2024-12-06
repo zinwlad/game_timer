@@ -10,16 +10,16 @@ class ProcessMonitor:
         self.logger = Logger("ProcessMonitor")
         self._cache = {}
         self._cache_time = 0
-        self._cache_lifetime = 30
+        self._cache_lifetime = 60  # Увеличиваем время жизни кэша до 60 секунд
         self._usage_db = "usage_stats.db"
         self._process_history = {}
         self._last_cleanup = time.time()
-        self._cleanup_interval = 600
+        self._cleanup_interval = 3600  # Увеличиваем интервал очистки до 1 часа
         # Добавляем буфер для записей в БД
         self._write_buffer = []
-        self._buffer_size = 50  # Максимальный размер буфера
+        self._buffer_size = 100  # Увеличиваем размер буфера
         self._last_flush = time.time()
-        self._flush_interval = 60  # Интервал принудительной записи в секундах
+        self._flush_interval = 300  # Увеличиваем интервал записи до 5 минут
         self._init_db()
         self.logger.info("ProcessMonitor initialized")
 
@@ -106,20 +106,16 @@ class ProcessMonitor:
 
         # Проверяем актуальность кэша
         if current_time - self._cache_time <= self._cache_lifetime:
-            return list(self._cache.keys())  # Возвращаем кэшированный результат
+            return list(self._cache.keys())
 
         try:
             new_cache = {}
-            # Получаем все процессы одним вызовом
-            processes = {p.info['name']: p for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent'])}
-
-            for proc_name, p in processes.items():
+            # Получаем только имена процессов для оптимизации
+            for proc in psutil.process_iter(['name']):
                 try:
-                    proc_info = p.info
+                    proc_name = proc.info['name']
                     new_cache[proc_name] = {
-                        'pid': p.pid,
-                        'cpu_percent': proc_info['cpu_percent'],
-                        'memory_percent': proc_info['memory_percent'],
+                        'pid': proc.pid,
                         'last_update': current_time
                     }
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -128,9 +124,9 @@ class ProcessMonitor:
             self._cache = new_cache
             self._cache_time = current_time
 
-            # Очистка старых данных
+            # Очистка старых данных с увеличенным интервалом
             if current_time - self._last_cleanup >= self._cleanup_interval:
-                self._cleanup_old_data()
+                self.cleanup_old_data()
                 self._last_cleanup = current_time
 
             return list(self._cache.keys())
