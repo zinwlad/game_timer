@@ -73,9 +73,10 @@ class GameTimerApp:
             self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
             
             # Остальные переменные
-            self.mode = tk.StringVar(value=self.settings.get("mode", "countdown"))
+            self.mode = tk.StringVar(value=self.settings.get("mode", "track"))
             self.hours = tk.IntVar(value=self.settings.get("hours", 0))
             self.minutes = tk.IntVar(value=self.settings.get("minutes", 0))
+            self.timer_running = False
             
             # Создаем виджеты
             self.create_widgets(main_frame)
@@ -267,42 +268,44 @@ class GameTimerApp:
         ttk.Label(title_frame, text="Game Timer", 
                  font=("Comic Sans MS", 24, "bold")).grid(row=0, column=0)
         
-        # Фрейм для пресетов
-        preset_frame = ttk.Frame(parent)
-        preset_frame.grid(row=1, column=0, sticky="ew", pady=5)
-        preset_frame.grid_columnconfigure(1, weight=1)
+        # Фрейм для пресетов времени
+        presets_frame = ttk.LabelFrame(parent, text="Быстрый выбор")
+        presets_frame.grid(row=3, column=0, padx=5, pady=5, sticky="ew")
         
-        ttk.Label(preset_frame, text="Быстрый выбор:").grid(row=0, column=0, padx=5)
+        # Добавляем подсказку для пресетов
+        ttk.Label(
+            presets_frame,
+            text="Выберите готовый интервал времени:",
+            font=("Arial", 10)
+        ).grid(row=0, column=0, padx=5, pady=5, columnspan=len(self.settings.get("presets", {})))
         
-        presets_container = ttk.Frame(preset_frame)
-        presets_container.grid(row=0, column=1, sticky="w")
+        # Кнопки пресетов
+        for i, (name, values) in enumerate(self.settings.get("presets", {}).items()):
+            ttk.Button(
+                presets_frame,
+                text=name,
+                command=lambda h=values["hours"], m=values["minutes"]: self.apply_preset(h, m)
+            ).grid(row=1, column=i, padx=5, pady=5)
         
-        col = 0
-        for name, time in self.settings.get("presets").items():
-            ttk.Button(presets_container, text=name,
-                      command=lambda h=time["hours"], m=time["minutes"]: 
-                      self.set_preset(h, m)).grid(row=0, column=col, padx=2)
-            col += 1
-            
         # Добавляем кнопку автозапуска
         self.autostart_var = tk.BooleanVar(value=self.settings.get("autostart"))
-        ttk.Checkbutton(preset_frame, text="Автозапуск", 
+        ttk.Checkbutton(parent, text="Автозапуск", 
                        variable=self.autostart_var,
-                       command=self.toggle_autostart).grid(row=0, column=2, padx=10)
+                       command=self.toggle_autostart).grid(row=4, column=0, padx=10, pady=5, sticky="ew")
         
         # Статус процессов
         self.process_status = ttk.Label(parent, text="Активные процессы: нет")
-        self.process_status.grid(row=2, column=0, sticky="ew", pady=5)
+        self.process_status.grid(row=5, column=0, sticky="ew", pady=5)
         
         # Выбор режима
         mode_frame = ttk.LabelFrame(parent, text="Режим работы", padding=10)
-        mode_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=5)
+        mode_frame.grid(row=6, column=0, sticky="ew", padx=20, pady=5)
         ttk.Radiobutton(mode_frame, text="Таймер", variable=self.mode, value="countdown").grid(row=0, column=0, padx=20)
         ttk.Radiobutton(mode_frame, text="Отслеживание игр", variable=self.mode, value="track").grid(row=0, column=1, padx=20)
         
         # Ввод времени
         time_frame = ttk.LabelFrame(parent, text="Установка времени", padding=10)
-        time_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=5)
+        time_frame.grid(row=7, column=0, sticky="ew", padx=20, pady=5)
         
         ttk.Entry(time_frame, textvariable=self.hours, width=5).grid(row=0, column=0, padx=2)
         ttk.Label(time_frame, text="часов").grid(row=0, column=1, padx=(2, 10))
@@ -312,7 +315,7 @@ class GameTimerApp:
 
         # Кнопки управления
         btn_frame = ttk.Frame(parent)
-        btn_frame.grid(row=5, column=0, padx=20, pady=10, sticky="ew")
+        btn_frame.grid(row=8, column=0, padx=20, pady=10, sticky="ew")
         
         self.start_button = ttk.Button(btn_frame, text="Начать", command=self.start_timer)
         self.start_button.grid(row=0, column=0, padx=5)
@@ -329,19 +332,19 @@ class GameTimerApp:
         # Отображение времени
         self.timer_label = tk.Label(parent, text="Оставшееся время: --:--:--",
                                   font=("Arial", 16, "bold"))
-        self.timer_label.grid(row=6, column=0, padx=20, pady=10, sticky="ew")
+        self.timer_label.grid(row=9, column=0, padx=20, pady=10, sticky="ew")
 
         # Статус
         self.status_label = tk.Label(parent, text="Статус: Ожидание",
                                    font=("Arial", 12))
-        self.status_label.grid(row=7, column=0, padx=20, pady=5, sticky="ew")
+        self.status_label.grid(row=10, column=0, padx=20, pady=5, sticky="ew")
 
         # Регистрируем виджеты в UI менеджере
         self.ui_manager.register_widget('timer', self.timer_label)
         self.ui_manager.register_widget('status', self.status_label)
         self.ui_manager.register_widget('process_list', self.process_status)
 
-    def set_preset(self, hours, minutes):
+    def apply_preset(self, hours, minutes):
         """Устанавливает предустановленное время."""
         self.hours.set(hours)
         self.minutes.set(minutes)

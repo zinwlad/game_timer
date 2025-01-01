@@ -142,16 +142,20 @@ class TimerManager:
             
     def pause_timer(self):
         """Ставит таймер на паузу или возобновляет его."""
-        if self.running:
-            if self.paused:
-                self.paused = False
-                self.pause_button.config(text="Пауза")
-                self.ui_manager.queue_update('status', "Таймер возобновлен")
-                self.update_timer()  # Возобновляем обновление
-            else:
-                self.paused = True
-                self.pause_button.config(text="Продолжить")
-                self.ui_manager.queue_update('status', "Таймер на паузе")
+        if self.paused:
+            self.paused = False
+            self.running = True  # Возобновляем работу таймера
+            self.start_time = datetime.now()  # Обновляем время начала
+            self.start_button.config(state=tk.DISABLED)
+            self.pause_button.config(text="Пауза", state=tk.NORMAL)
+            self.ui_manager.queue_update('status', "Таймер возобновлен")
+            self.update_timer()  # Возобновляем обновление
+        else:
+            self.running = False  # Останавливаем таймер
+            self.paused = True
+            self.start_button.config(state=tk.NORMAL)
+            self.pause_button.config(text="Продолжить", state=tk.DISABLED)
+            self.ui_manager.queue_update('status', "Таймер на паузе")
                 
     def reset_timer(self):
         """Сбрасывает таймер."""
@@ -178,11 +182,11 @@ class TimerManager:
                 hours = self.settings.get("hours", 0)
                 minutes = self.settings.get("minutes", 0)
                 self.remaining_time = hours * 3600 + minutes * 60
+                self.timer_label.config(text=f"Оставшееся время: {hours:02d}:{minutes:02d}:00")
             else:
                 self.remaining_time = 0
+                self.timer_label.config(text="Оставшееся время: --:--:--")
                 
-            # Показываем начальное время
-            self.update_timer_display()
             self.ui_manager.queue_update('status', "Таймер сброшен")
             return True
             

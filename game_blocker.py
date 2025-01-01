@@ -42,9 +42,23 @@ class GameBlocker:
             self.block_screen.block_window.lift()  # Поднимаем окно поверх всех окон
             self.block_screen.block_window.focus_force()  # Принудительно фокусируем окно
             
+            # Добавляем отслеживание закрытия окна блокировки
+            self.block_screen.block_window.bind("<<BlockScreenClose>>", lambda e: self.on_block_screen_close())
+            
+    def on_block_screen_close(self):
+        """Обработчик закрытия окна блокировки"""
+        self.block_screen = None
+        self.block_timer = None
+        self.timer_expired = False  # Сбрасываем флаг истечения таймера
+        
     def monitor_games_once(self):
         """Выполняет один цикл мониторинга"""
-        if self.is_game_running() and self.timer_expired:
+        if not self.is_game_running():
+            # Если игра не запущена, сбрасываем таймер блокировки
+            self.block_timer = None
+            return
+            
+        if self.timer_expired:
             current_time = time.time()
             
             # Если таймер блокировки еще не установлен - устанавливаем

@@ -1,7 +1,7 @@
 {
     "mode": "timer",
     "hours": 0,
-    "minutes": 1,
+    "minutes": 30,
     "processes": [
         "game.exe",
         "minecraft.exe",
