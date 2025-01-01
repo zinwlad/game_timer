@@ -21,8 +21,8 @@
             "progress": 65
         },
         "night_owl": {
-            "unlocked": false,
-            "unlocked_at": null,
+            "unlocked": true,
+            "unlocked_at": "2024-12-30 22:42:11",
             "progress": 0
         },
         "weekend_warrior": {
