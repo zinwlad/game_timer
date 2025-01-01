@@ -1,8 +1,8 @@
 import psutil
+import json
 import time
 import tkinter as tk
-from tkinter import simpledialog, ttk, messagebox
-from threading import Thread
+from tkinter import ttk, messagebox
 import concurrent.futures
 import os
 import winsound
@@ -11,7 +11,6 @@ import win32gui
 import win32con
 import win32com.client
 import keyboard
-
 from logger import Logger
 from settings import Settings
 from theme_manager import ThemeManager
@@ -25,6 +24,7 @@ from achievement_manager import AchievementManager
 from timer_notifications import TimerNotifications
 from game_blocker import GameBlocker
 from timer_manager import TimerManager
+from notification_window import NotificationWindow
 
 class GameTimerApp:
     def __init__(self, root):
@@ -109,15 +109,34 @@ class GameTimerApp:
             self.quit_app()
             
     def start_timer(self):
-        """Запускает выбранный режим."""
-        hours = self.hours.get()
-        minutes = self.minutes.get()
-        result = self.timer_manager.start_timer(hours, minutes)
-        
-        if isinstance(result, tuple):  # Если возникла ошибка
-            _, error_message = result
-            self.logger.error(f"Failed to start timer: {error_message}")
-            messagebox.showerror("Ошибка", f"Не удалось запустить таймер: {error_message}")
+        """Запускает таймер"""
+        if not self.timer_running:
+            # Проверяем режим отслеживания и наличие запущенных игр
+            if self.mode.get() == "track":
+                if not self.game_blocker.is_game_running():
+                    messagebox.showinfo("Информация", "Нет запущенных игр для отслеживания")
+                    return
+                # В режиме отслеживания устанавливаем фиксированное время 2 часа
+                self.hours.set(2)
+                self.minutes.set(0)
+            
+            self.timer_running = True
+            self.start_button.configure(state="disabled")
+            self.pause_button.configure(state="normal")
+            self.reset_button.configure(state="normal")
+            
+            # Запускаем мониторинг игр если выбран режим отслеживания
+            if self.mode.get() == "track":
+                self.game_blocker.is_monitoring = True
+                # Запускаем в отдельном потоке
+                self.monitor_thread = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                self.monitor_thread.submit(self.game_blocker.monitor_games)
+            
+            # Запускаем обновление процессов
+            self.update_process_status()
+            
+            # Запускаем таймер
+            self.countdown_timer()
             
     def pause_timer(self):
         """Ставит таймер на паузу или возобновляет его."""
@@ -266,7 +285,7 @@ class GameTimerApp:
         title_frame.grid_columnconfigure(0, weight=1)
         
         ttk.Label(title_frame, text="Game Timer", 
-                 font=("Comic Sans MS", 24, "bold")).grid(row=0, column=0)
+                 font=("Arial", 24, "bold")).grid(row=0, column=0)
         
         # Фрейм для пресетов времени
         presets_frame = ttk.LabelFrame(parent, text="Быстрый выбор")
@@ -378,27 +397,124 @@ class GameTimerApp:
             self.settings.set("processes", [p.strip() for p in result.split("\n") if p.strip()])
 
     def update_process_status(self):
-        """Обновляет информацию о запущенных процессах"""
-        active_processes = [p for p in self.process_monitor.get_active_processes()
-                          if p in self.settings.get("processes")]
-        if active_processes:
-            processes_text = ', '.join(active_processes)
-        else:
-            processes_text = "нет"
-        self.ui_manager.queue_update('process_list', processes_text)
-
-def show_break_notification(self, title, message):
-    try:
-        if not hasattr(self, 'notification_window'):
-            self.notification_window = NotificationWindow(
-                parent=self.root,
-                title=title,
-                message=message
-            )
-        self.notification_window.show()
-    except Exception as e:
-        self.logger.error(f"Ошибка показа уведомления: {str(e)}")
+        """Обновляет статус отслеживаемых процессов"""
+        if self.game_blocker and hasattr(self, 'process_status'):
+            if not self.game_blocker.monitored_processes:
+                status_text = "Отслеживаемые процессы не настроены"
+            else:
+                running_games = []
+                for proc in psutil.process_iter(['name']):
+                    try:
+                        process_name = proc.info['name'].lower()
+                        for game in self.game_blocker.monitored_processes:
+                            if game.lower() in process_name:
+                                running_games.append(game)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        continue
+                
+                if running_games:
+                    status_text = f"Активные процессы: {', '.join(running_games)}"
+                else:
+                    status_text = "Активные процессы: нет"
+                    
+            self.process_status.configure(text=status_text)
             
+            # Обновляем статус только если таймер запущен
+            if self.timer_running:
+                self.root.after(1000, self.update_process_status)
+                
+    def stop_timer(self):
+        """Останавливает таймер и мониторинг"""
+        self.timer_running = False
+        if hasattr(self, 'monitor_thread'):
+            self.game_blocker.is_monitoring = False
+            self.monitor_thread.shutdown(wait=False)
+            
+    def pause_timer(self):
+        """Ставит таймер на паузу"""
+        if self.timer_running:
+            self.timer_running = False
+            self.start_button.configure(state="normal")
+            self.pause_button.configure(state="disabled")
+            
+            # Останавливаем мониторинг если он был запущен
+            if self.mode.get() == "track":
+                self.game_blocker.is_monitoring = False
+                if hasattr(self, 'monitor_thread'):
+                    self.monitor_thread.shutdown(wait=False)
+                    
+    def reset_timer(self):
+        """Сбрасывает таймер"""
+        self.timer_running = False
+        self.start_button.configure(state="normal")
+        self.pause_button.configure(state="disabled")
+        self.reset_button.configure(state="disabled")
+        
+        # Останавливаем мониторинг если он был запущен
+        if self.mode.get() == "track":
+            self.game_blocker.is_monitoring = False
+            if hasattr(self, 'monitor_thread'):
+                self.monitor_thread.shutdown(wait=False)
+        
+        # Сбрасываем время
+        self.hours.set(0)
+        self.minutes.set(30)
+        self.remaining_time_label.configure(text="Оставшееся время: --:--:--")
+        
+    def countdown_timer(self):
+        """Обновляет таймер"""
+        if self.timer_running and (self.hours.get() > 0 or self.minutes.get() > 0):
+            total_seconds = self.hours.get() * 3600 + self.minutes.get() * 60
+            
+            if total_seconds > 0:
+                total_seconds -= 1
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                
+                self.hours.set(hours)
+                self.minutes.set(minutes)
+                
+                # Обновляем отображение оставшегося времени
+                self.timer_label.configure(
+                    text=f"Оставшееся время: {hours:02d}:{minutes:02d}:{seconds:02d}"
+                )
+                
+                # Планируем следующее обновление через 1 секунду
+                self.root.after(1000, self.countdown_timer)
+            else:
+                self.timer_expired()
+        elif not self.timer_running:
+            # Если таймер на паузе, продолжаем обновлять отображение
+            hours = self.hours.get()
+            minutes = self.minutes.get()
+            self.timer_label.configure(
+                text=f"Оставшееся время: {hours:02d}:{minutes:02d}:00"
+            )
+            self.root.after(1000, self.countdown_timer)
+
+    def timer_expired(self):
+        """Обработчик истечения таймера"""
+        self.timer_running = False
+        self.start_button.configure(state="normal")
+        self.pause_button.configure(state="disabled")
+        self.reset_button.configure(state="disabled")
+        
+        # Показываем уведомление
+        try:
+            if not hasattr(self, 'notification_window'):
+                self.notification_window = NotificationWindow(
+                    parent=self.root,
+                    title="Время отдыха!",
+                    message="Пора сделать перерыв!"
+                )
+            self.notification_window.show()
+        except Exception as e:
+            self.logger.error(f"Ошибка показа уведомления: {str(e)}")
+            
+        # Устанавливаем флаг истечения таймера для блокировщика
+        if self.game_blocker:
+            self.game_blocker.timer_expired = True
 
 def simulate_esc_key():
     """Симулирует нажатие клавиши ESC"""
