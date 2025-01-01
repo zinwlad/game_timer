@@ -26,9 +26,9 @@ data_files = [
     '--add-data=timer.ico;.',
     '--add-data=timer_settings.json;.',
     '--add-data=achievements.json;.',
-    '--add-data=.env;.',
     '--add-data=README.md;.',
-    '--add-data=requirements.txt;.'
+    '--add-data=requirements.txt;.',
+    '--add-data=logs;logs'  # Добавляем папку с логами
 ]
 
 # Скрытые импорты
@@ -48,7 +48,13 @@ hidden_imports = [
     '--hidden-import=winreg',
     '--hidden-import=sqlite3',
     '--hidden-import=concurrent.futures',
-    '--hidden-import=threading'
+    '--hidden-import=threading',
+    '--hidden-import=queue',
+    '--hidden-import=json',
+    '--hidden-import=datetime',
+    '--hidden-import=tkinter',
+    '--hidden-import=tkinter.ttk',
+    '--hidden-import=tkinter.messagebox'
 ]
 
 # Опции сборки
@@ -60,7 +66,8 @@ build_options = [
     '--icon=timer.ico',  # Иконка приложения
     '--clean',        # Очистить временные файлы после сборки
     '--noconfirm',    # Не спрашивать подтверждения при очистке
-    '--uac-admin'     # Запрашивать права администратора
+    '--uac-admin',    # Запрашивать права администратора
+    '--log-level=INFO'  # Уровень логирования
 ]
 
 # Объединяем все опции

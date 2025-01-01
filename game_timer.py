@@ -303,9 +303,16 @@ class GameTimerApp:
         ttk.Radiobutton(mode_frame, text="Таймер", variable=self.mode, value="countdown").grid(row=0, column=0, padx=20)
         ttk.Radiobutton(mode_frame, text="Отслеживание игр", variable=self.mode, value="track").grid(row=0, column=1, padx=20)
         
+        # По умолчанию устанавливаем режим отслеживания
+        self.mode.set("track")
+        
         # Ввод времени
         time_frame = ttk.LabelFrame(parent, text="Установка времени", padding=10)
         time_frame.grid(row=7, column=0, sticky="ew", padx=20, pady=5)
+        
+        # Добавляем отслеживание изменений времени
+        self.hours.trace_add("write", self.on_time_change)
+        self.minutes.trace_add("write", self.on_time_change)
         
         ttk.Entry(time_frame, textvariable=self.hours, width=5).grid(row=0, column=0, padx=2)
         ttk.Label(time_frame, text="часов").grid(row=0, column=1, padx=(2, 10))
@@ -348,6 +355,18 @@ class GameTimerApp:
         """Устанавливает предустановленное время."""
         self.hours.set(hours)
         self.minutes.set(minutes)
+        # При выборе пресета переключаемся в режим таймера
+        self.mode.set("countdown")
+        
+    def on_time_change(self, *args):
+        """Обработчик изменения времени"""
+        try:
+            hours = self.hours.get()
+            minutes = self.minutes.get()
+            if hours > 0 or minutes > 0:
+                self.mode.set("countdown")
+        except:
+            pass
 
     def configure_processes(self):
         """Настройка списка отслеживаемых процессов."""
