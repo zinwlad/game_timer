@@ -6,6 +6,7 @@
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from tray_manager import TrayManager
 
 class GUIManager(QtWidgets.QWidget):
     start_timer_signal = QtCore.pyqtSignal()
@@ -249,6 +250,53 @@ from autostart_manager import AutostartManager
 from achievement_manager import AchievementManager
 
 class GameTimerApp(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Game Timer")
+        self.setMinimumSize(500, 800)
+        self.settings = SettingsManager()
+        self.process_manager = ProcessManager(self.settings)
+        self.gui_manager = GUIManager(self)
+        self.setCentralWidget(self.gui_manager)
+        self.gui_manager.start_process_monitoring(self.process_manager)
+
+        # Менеджеры
+        self.game_blocker = GameBlocker(self.settings)
+        self.activity_monitor = ActivityMonitor(self.settings)
+        self.achievement_manager = AchievementManager(self.settings)
+        self.notification_window = None
+        self.timer_manager = TimerManager(self, self.game_blocker, self.gui_manager, self.settings)
+
+        # Подключение сигналов GUI
+        self.gui_manager.start_timer_signal.connect(self.start_timer)
+        self.gui_manager.pause_timer_signal.connect(self.pause_timer)
+        self.gui_manager.reset_timer_signal.connect(self.reset_timer)
+        self.gui_manager.preset_applied_signal.connect(self.apply_preset)
+
+        # Таймеры для периодических задач
+        self.activity_timer = QtCore.QTimer(self)
+        self.activity_timer.timeout.connect(self.check_activity)
+        self.activity_timer.start(1000)
+
+        self.achievement_timer = QtCore.QTimer(self)
+        self.achievement_timer.timeout.connect(self.check_achievements)
+        self.achievement_timer.start(60000)
+
+        # TrayManager — только после инициализации всех окон
+        self.tray_manager = TrayManager(self.show_main_window, self.quit_app)
+
+    def show_main_window(self):
+        self.showNormal()
+        self.activateWindow()
+
+    def quit_app(self):
+        QtWidgets.QApplication.quit()
+
+    def closeEvent(self, event):
+        # Скрываем окно, приложение остаётся жить в трее
+        event.ignore()
+        self.hide()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Game Timer")

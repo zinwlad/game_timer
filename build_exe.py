@@ -23,7 +23,7 @@ project_files = [
     'settings.py',
     'timer_notifications.py',
     'tray_manager.py',
-    'ui_manager.py'
+
 ]
 
 # Создаем строку с данными для добавления

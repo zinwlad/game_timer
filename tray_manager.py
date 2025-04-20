@@ -33,10 +33,16 @@ class TrayManager:
             # Создаем простую иконку
             image = Image.new('RGB', (64, 64), color='red')
             
-            # Если есть файл иконки, используем его
-            icon_path = os.path.join(os.path.dirname(__file__), 'icon.png')
+            # Если есть файл иконки Icon_game_timer.png в корне проекта, используем его
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            icon_path = os.path.join(project_root, 'Icon_game_timer.png')
             if os.path.exists(icon_path):
                 image = Image.open(icon_path)
+            else:
+                # fallback: icon.png рядом с этим файлом
+                local_icon = os.path.join(os.path.dirname(__file__), 'icon.png')
+                if os.path.exists(local_icon):
+                    image = Image.open(local_icon)
             
             # Создаем иконку
             self.icon = pystray.Icon(
