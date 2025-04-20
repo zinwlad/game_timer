@@ -19,17 +19,14 @@ project_files = [
     'hotkey_manager.py',
     'logger.py',
     'notification_window.py',
-    'process_monitor.py',
-    'settings.py',
-    'timer_notifications.py',
+    'process_manager.py',
     'tray_manager.py',
 
 ]
 
 # Создаем строку с данными для добавления
 data_files = [
-    '--add-data=timer.ico;.',
-    '--add-data=timer_settings.json;.',
+    '--add-data=Icon_game_timer.png;.',
     '--add-data=achievements.json;.',
     '--add-data=README.md;.',
     '--add-data=requirements.txt;.',
@@ -62,18 +59,17 @@ hidden_imports = [
     '--hidden-import=tkinter.messagebox'
 ]
 
-# Опции сборки
-build_options = [
-    'game_timer.py',  # Основной файл
-    '--onefile',      # Собрать в один файл
-    '--windowed',     # Без консольного окна
-    '--name=GameTimer',  # Имя выходного файла
-    '--icon=timer.ico',  # Иконка приложения
-    '--clean',        # Очистить временные файлы после сборки
-    '--noconfirm',    # Не спрашивать подтверждения при очистке
-    '--uac-admin',    # Запрашивать права администратора
-    '--log-level=INFO'  # Уровень логирования
-]
+if __name__ == "__main__":
+    PyInstaller.__main__.run(
+        [
+            '--onefile',
+            '--noconsole',
+            '--icon=Icon_game_timer.png',
+            *data_files,
+            *hidden_imports,
+            'game_timer.py'
+        ]
+    )
 
 # Объединяем все опции
 options = (
