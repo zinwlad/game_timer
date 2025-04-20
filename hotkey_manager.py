@@ -1,3 +1,9 @@
+"""
+Файл: hotkey_manager.py
+
+Модуль для управления глобальными горячими клавишами (hotkeys) в приложении Game Timer.
+"""
+
 import keyboard
 import logging
 from typing import Callable

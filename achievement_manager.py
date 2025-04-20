@@ -1,5 +1,12 @@
 """Менеджер достижений"""
 import json
+"""
+Файл: achievement_manager.py
+
+Модуль для управления достижениями пользователя: загрузка, сохранение, обработка прогресса и отображение уведомлений.
+Используется в приложении Game Timer.
+"""
+
 import os
 from datetime import datetime
 from typing import Dict, Optional, List

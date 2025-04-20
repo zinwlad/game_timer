@@ -1,3 +1,10 @@
+"""
+Файл: timer_manager.py
+
+Модуль для управления таймером (countdown и countup), логикой отсчёта времени, обновлением интерфейса и обработкой событий окончания таймера.
+Используется в приложении Game Timer.
+"""
+
 from datetime import datetime
 import winsound
 from notification_window import NotificationWindow
@@ -96,15 +103,15 @@ class TimerManager:
     def update_timer_display(self):
         """Обновляет отображение времени"""
         try:
-            if not self.running and not hasattr(self, 'time_display'):
+            if not self.running:
                 return
             hours = self.remaining_time // 3600
             minutes = (self.remaining_time % 3600) // 60
             seconds = self.remaining_time % 60
             time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            # Если есть time_display (например, QLabel), обновляем его
-            if hasattr(self, 'time_display'):
-                self.time_display.setText(time_str)
+            # Обновляем метку в UI
+            if hasattr(self.ui_manager, 'time_display'):
+                self.ui_manager.time_display.setText(time_str)
             self.logger.debug(f"Display updated: {time_str}")
         except Exception as e:
             self.logger.error(f"Error updating display: {str(e)}")
@@ -113,13 +120,13 @@ class TimerManager:
     def update_button_states(self):
         """Обновляет состояние кнопок (PyQt5)"""
         try:
-            if hasattr(self, 'start_button'):
-                self.start_button.setEnabled(not self.running)
-            if hasattr(self, 'pause_button'):
-                self.pause_button.setEnabled(self.running)
-                self.pause_button.setText("Продолжить" if self.paused else "Пауза")
-            if hasattr(self, 'reset_button'):
-                self.reset_button.setEnabled(self.running)
+            if hasattr(self.ui_manager, 'start_button'):
+                self.ui_manager.start_button.setEnabled(not self.running)
+            if hasattr(self.ui_manager, 'pause_button'):
+                self.ui_manager.pause_button.setEnabled(self.running)
+                self.ui_manager.pause_button.setText("Продолжить" if self.paused else "Пауза")
+            if hasattr(self.ui_manager, 'reset_button'):
+                self.ui_manager.reset_button.setEnabled(self.running)
         except Exception as e:
             self.logger.error(f"Error updating button states: {str(e)}")
 
@@ -241,10 +248,10 @@ class TimerManager:
 
     def set_ui_elements(self, time_display, start_button, pause_button, reset_button):
         """Устанавливает UI элементы для таймера"""
-        self.time_display = time_display
-        self.start_button = start_button
-        self.pause_button = pause_button
-        self.reset_button = reset_button
+        self.ui_manager.time_display = time_display
+        self.ui_manager.start_button = start_button
+        self.ui_manager.pause_button = pause_button
+        self.ui_manager.reset_button = reset_button
         self.update_timer_display()
         
     def get_elapsed_time(self):

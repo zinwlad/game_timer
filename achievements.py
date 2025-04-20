@@ -1,4 +1,10 @@
-"""Модуль с определениями достижений"""
+"""
+Файл: achievements.py
+
+Модуль для определения структуры достижений, хранения и сериализации информации о достижениях пользователя.
+Содержит dataclass Achievement и словарь ACHIEVEMENTS с базовыми достижениями для Game Timer.
+"""
+
 from typing import Dict, List, Optional
 import json
 import os

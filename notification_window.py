@@ -6,6 +6,12 @@ import random
 from logger import Logger
 import os
 
+"""
+Файл: notification_window.py
+
+Модуль для отображения всплывающих уведомлений пользователю в приложении Game Timer.
+"""
+
 from PyQt5 import QtWidgets, QtCore, QtGui
 import random
 import os

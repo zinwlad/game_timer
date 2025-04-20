@@ -4,6 +4,12 @@ import time
 import psutil
 from block_screen import BlockScreen
 import json
+"""
+Файл: game_blocker.py
+
+Модуль для блокировки игр и управления блокировкой по лимиту времени в приложении Game Timer.
+"""
+
 import os
 import random
 from PIL import Image, ImageTk

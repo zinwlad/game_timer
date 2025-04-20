@@ -1,3 +1,9 @@
+"""
+Файл: countdown_window.py
+
+Модуль с реализацией окна обратного отсчёта времени перед блокировкой (CountdownWindow) для Game Timer.
+"""
+
 from PyQt5 import QtWidgets, QtCore
 import sys
 

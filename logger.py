@@ -1,3 +1,9 @@
+"""
+Файл: logger.py
+
+Модуль-обёртка для логирования событий приложения Game Timer.
+"""
+
 import logging
 import os
 from datetime import datetime

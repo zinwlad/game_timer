@@ -1,3 +1,10 @@
+"""
+Файл: block_screen.py
+
+Модуль с реализацией полноэкранного окна блокировки (BlockScreen) для ограничения доступа к играм по истечении лимита времени.
+Используется в приложении Game Timer.
+"""
+
 from PyQt5 import QtWidgets, QtCore, QtGui
 import sys
 from countdown_window import CountdownWindow

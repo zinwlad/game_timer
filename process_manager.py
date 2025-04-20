@@ -1,3 +1,9 @@
+"""
+Файл: process_manager.py
+
+Модуль для мониторинга и учёта времени, проведённого в отслеживаемых процессах (играх) в приложении Game Timer.
+"""
+
 import psutil
 import logging
 from datetime import datetime, timedelta

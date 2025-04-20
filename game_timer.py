@@ -1,3 +1,10 @@
+"""
+Файл: game_timer.py
+
+Главный модуль приложения Game Timer. Содержит основной класс GUIManager (интерфейс пользователя)
+и GameTimerApp (логика управления приложением, инициализация менеджеров, запуск GUI).
+"""
+
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 class GUIManager(QtWidgets.QWidget):

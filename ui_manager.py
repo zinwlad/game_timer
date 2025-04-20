@@ -1,4 +1,9 @@
 import tkinter as tk
+"""
+Файл: ui_manager.py
+
+Модуль с дополнительными компонентами и вспомогательными функциями для интерфейса приложения Game Timer.
+"""
 from tkinter import ttk
 import time
 from typing import Optional, Dict, Any

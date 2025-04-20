@@ -1,5 +1,11 @@
 import logging
 import pystray
+"""
+Файл: tray_manager.py
+
+Модуль для управления значком приложения в системном трее и взаимодействия через контекстное меню.
+Используется в приложении Game Timer.
+"""
 from PIL import Image
 import os
 import tkinter as tk

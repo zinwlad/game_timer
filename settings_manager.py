@@ -1,3 +1,9 @@
+"""
+Файл: settings_manager.py
+
+Модуль для загрузки, сохранения и управления настройками пользователя в приложении Game Timer.
+"""
+
 import json
 import os
 from logger import Logger

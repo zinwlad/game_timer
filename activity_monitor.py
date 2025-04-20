@@ -1,3 +1,9 @@
+"""
+Файл: activity_monitor.py
+
+Модуль для мониторинга активности пользователя (мышь, клавиатура) для автопаузы таймера в Game Timer.
+"""
+
 import time
 import pyautogui
 import keyboard

@@ -1,4 +1,10 @@
 import PyInstaller.__main__
+"""
+Файл: build_exe.py
+
+Скрипт для сборки и упаковки приложения Game Timer с помощью PyInstaller.
+"""
+
 import os
 
 # Список всех Python файлов проекта

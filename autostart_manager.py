@@ -1,4 +1,10 @@
 import winreg
+"""
+Файл: autostart_manager.py
+
+Модуль для управления автозапуском приложения Game Timer при старте системы (Windows).
+"""
+
 import sys
 from logger import Logger
 from typing import Optional
