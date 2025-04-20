@@ -1,93 +1,41 @@
-import tkinter as tk
-from tkinter import ttk
-import time
-from logger import Logger
+from PyQt5 import QtWidgets, QtCore
+import sys
 
-class CountdownWindow:
-    def __init__(self, parent, seconds=15):
-        """
-        Создает окно обратного отсчета перед блокировкой
-        :param parent: родительское окно
-        :param seconds: количество секунд для отсчета
-        """
-        self.logger = Logger("CountdownWindow")
-        self.window = tk.Toplevel(parent)
-        self.window.title("Предупреждение")
-        self.seconds = seconds
-        self.remaining = seconds
-        
-        # Настройка окна
-        self.window.overrideredirect(True)  # Убираем заголовок окна
-        self.window.attributes('-topmost', True)  # Поверх всех окон
-        
-        # Получаем размеры экрана
-        screen_width = self.window.winfo_screenwidth()
-        screen_height = self.window.winfo_screenheight()
-        
-        # Размеры окна
-        window_width = 300
-        window_height = 100
-        
-        # Позиционируем окно в правом верхнем углу
-        x = screen_width - window_width - 20
-        y = 20
-        
-        self.window.geometry(f"{window_width}x{window_height}+{x}+{y}")
-        
-        # Настройка стиля
-        style = ttk.Style()
-        style.configure('Warning.TFrame', background='#ff9999')
-        style.configure('Warning.TLabel', background='#ff9999', foreground='black')
-        
-        # Создаем и размещаем виджеты
-        main_frame = ttk.Frame(self.window, style='Warning.TFrame', padding="10")
-        main_frame.grid(row=0, column=0, sticky="nsew")
-        
-        self.window.grid_columnconfigure(0, weight=1)
-        self.window.grid_rowconfigure(0, weight=1)
-        
-        # Сообщение
-        warning_label = ttk.Label(
-            main_frame,
-            text="Внимание! Блокировка через:",
-            font=("Arial", 12, "bold"),
-            style='Warning.TLabel',
-            wraplength=280
-        )
-        warning_label.grid(row=0, column=0, pady=(0, 10))
-        
-        # Таймер
-        self.time_label = ttk.Label(
-            main_frame,
-            text=str(self.seconds),
-            font=("Arial", 16, "bold"),
-            style='Warning.TLabel'
-        )
-        self.time_label.grid(row=1, column=0)
-        
-        # Настройка фона
-        self.window.configure(bg='#ff9999')
-        
-        # Запускаем обновление таймера
-        self.update_timer()
-        
-    def update_timer(self):
-        """Обновляет отображение таймера"""
-        try:
-            if self.remaining > 0:
-                self.time_label.configure(text=str(self.remaining))
-                self.remaining -= 1
-                self.window.after(1000, self.update_timer)
-        except Exception as e:
-            self.logger.error(f"Error updating timer: {str(e)}")
-            
-    def show(self):
-        """Показывает окно"""
-        try:
-            self.window.deiconify()
-            self.window.lift()
-            self.window.focus_force()
-            # Обновляем окно
-            self.window.update()
-        except Exception as e:
-            self.logger.error(f"Error showing countdown window: {str(e)}")
+class CountdownWindow(QtWidgets.QDialog):
+    countdown_finished = QtCore.pyqtSignal()
+
+    def __init__(self, delay_seconds, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Предупреждение")
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        self.setModal(True)
+        self.resize(350, 120)
+
+        self.remaining_time = delay_seconds
+        self.label = QtWidgets.QLabel(f"Игра будет заблокирована через {self.remaining_time} секунд", self)
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.label)
+
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self._update_countdown)
+        self.timer.start(1000)
+
+    def _update_countdown(self):
+        self.remaining_time -= 1
+        if self.remaining_time <= 0:
+            self.label.setText("Время вышло!")
+            self.timer.stop()
+            QtCore.QTimer.singleShot(1000, self._finish)
+        else:
+            self.label.setText(f"Игра будет заблокирована через {self.remaining_time} секунд")
+
+    def _finish(self):
+        self.accept()  # Закрыть окно
+        self.countdown_finished.emit()
+
+# Тестирование окна отдельно
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    window = CountdownWindow(10)
+    window.exec_()

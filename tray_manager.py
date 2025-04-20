@@ -1,57 +1,83 @@
+import logging
 import pystray
-from PIL import Image, ImageDraw
-from threading import Thread
-from logger import Logger
-from typing import Callable, Tuple
+from PIL import Image
+import os
+import tkinter as tk
+from typing import Callable
 
 class TrayManager:
-    """Менеджер системного трея"""
-    
     def __init__(self, show_window_callback: Callable, quit_callback: Callable):
-        self.logger = Logger("TrayManager")
+        """Инициализация менеджера трея"""
+        self.logger = logging.getLogger('TrayManager')
         self.show_window_callback = show_window_callback
         self.quit_callback = quit_callback
-        self.tray_icon = None
+        self.icon = None
         self._setup_tray_icon()
         
-    def _create_tray_icon(self) -> Image.Image:
-        """Создание иконки для трея"""
-        try:
-            # Создаем простую иконку
-            width = 64
-            height = 64
-            color1 = 'blue'
-            color2 = 'white'
-            
-            image = Image.new('RGB', (width, height), color1)
-            dc = ImageDraw.Draw(image)
-            dc.ellipse([10, 10, width-10, height-10], fill=color2)
-            
-            return image
-        except Exception as e:
-            self.logger.error(f"Failed to create tray icon: {str(e)}")
-            return None
-
-    def _setup_tray_icon(self) -> None:
+    def _create_menu(self):
+        """Создает меню для иконки в трее"""
+        return pystray.Menu(
+            pystray.MenuItem("Показать", self._show_window),
+            pystray.MenuItem("Выход", self._quit_app)
+        )
+        
+    def _setup_tray_icon(self):
         """Настройка иконки в трее"""
         try:
-            self.tray_icon = pystray.Icon("Game Timer")
-            self.tray_icon.icon = self._create_tray_icon()
-            menu_items = (
-                pystray.MenuItem("Show", self.show_window_callback),
-                pystray.MenuItem("Exit", self.quit_callback)
+            # Создаем простую иконку
+            image = Image.new('RGB', (64, 64), color='red')
+            
+            # Если есть файл иконки, используем его
+            icon_path = os.path.join(os.path.dirname(__file__), 'icon.png')
+            if os.path.exists(icon_path):
+                image = Image.open(icon_path)
+            
+            # Создаем иконку
+            self.icon = pystray.Icon(
+                "game_timer",
+                image,
+                "Game Timer",
+                self._create_menu()
             )
-            self.tray_icon.menu = pystray.Menu(*menu_items)
-            Thread(target=self.tray_icon.run, daemon=True).start()
-            self.logger.info("Tray icon setup completed")
+            
+            # Запускаем иконку в отдельном потоке
+            self.icon.run_detached()
+            self.logger.info("Tray icon initialized")
+            
         except Exception as e:
             self.logger.error(f"Failed to setup tray icon: {str(e)}")
-
-    def stop(self) -> None:
-        """Остановка иконки в трее"""
+            
+    def _show_window(self):
+        """Показывает главное окно"""
         try:
-            if self.tray_icon:
-                self.tray_icon.stop()
+            self.show_window_callback()
+        except Exception as e:
+            self.logger.error(f"Failed to show window: {str(e)}")
+            
+    def _quit_app(self):
+        """Закрывает приложение"""
+        try:
+            self.stop()
+            self.quit_callback()
+        except Exception as e:
+            self.logger.error(f"Failed to quit app: {str(e)}")
+            
+    def stop(self):
+        """Останавливает иконку в трее"""
+        try:
+            if self.icon:
+                self.icon.stop()
                 self.logger.info("Tray icon stopped")
         except Exception as e:
-            self.logger.error(f"Error stopping tray icon: {str(e)}")
+            self.logger.error(f"Failed to stop tray icon: {str(e)}")
+            
+    def update_icon(self, icon_path: str):
+        """Обновляет иконку"""
+        try:
+            if os.path.exists(icon_path):
+                image = Image.open(icon_path)
+                if self.icon:
+                    self.icon.icon = image
+                    self.logger.info("Tray icon updated")
+        except Exception as e:
+            self.logger.error(f"Failed to update icon: {str(e)}")

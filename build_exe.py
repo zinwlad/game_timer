@@ -15,7 +15,6 @@ project_files = [
     'notification_window.py',
     'process_monitor.py',
     'settings.py',
-    'theme_manager.py',
     'timer_notifications.py',
     'tray_manager.py',
     'ui_manager.py'
