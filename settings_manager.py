@@ -51,6 +51,13 @@ class SettingsManager:
                 "backup_count": 5,
                 "log_dir": "logs",
                 "log_file": "game_timer.log"
+            },
+            # Горячие клавиши
+            "hotkeys": {
+                "start": "ctrl+alt+s",
+                "pause_resume": "ctrl+alt+p",
+                "reset": "ctrl+alt+r",
+                "add_5_min": "ctrl+alt+plus"
             }
         }
         self.load()

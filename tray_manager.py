@@ -39,6 +39,10 @@ class TrayManager:
         menu.addAction(self.pause_action)
         menu.addAction(self.reset_action)
         menu.addSeparator()
+        # Подменю с горячими клавишами (read-only)
+        self.hotkeys_menu = menu.addMenu("Горячие клавиши")
+        self._populate_hotkeys_menu()
+
         menu.addAction(quit_action)
 
         self.tray_icon.setContextMenu(menu)
@@ -51,6 +55,44 @@ class TrayManager:
         self._menu_update_timer = QtCore.QTimer(self.main_window)
         self._menu_update_timer.timeout.connect(self.update_menu_state)
         self._menu_update_timer.start(1000)
+
+    def _populate_hotkeys_menu(self):
+        """Заполняет подменю 'Горячие клавиши' текущими комбинациями."""
+        try:
+            self.hotkeys_menu.clear()
+            # Настраиваемые хоткеи из settings
+            titles = {
+                'start': 'Старт',
+                'pause_resume': 'Пауза/Продолжить',
+                'reset': 'Сброс',
+                'add_5_min': '+5 минут',
+            }
+            hotkeys = {}
+            try:
+                hotkeys = self.main_window.settings.get('hotkeys') or {}
+            except Exception:
+                hotkeys = {}
+
+            for key, title in titles.items():
+                combo = hotkeys.get(key)
+                if combo:
+                    act = QAction(f"{title} — {combo}", self.main_window)
+                    act.setEnabled(False)
+                    self.hotkeys_menu.addAction(act)
+
+            # Встроенные фиксированные хоткеи
+            self.hotkeys_menu.addSeparator()
+            fixed = [
+                "Увеличить лимит — Ctrl+Alt+Up",
+                "Уменьшить лимит — Ctrl+Alt+Down",
+                "Снять блокировку — Ctrl+Alt+B",
+            ]
+            for label in fixed:
+                act = QAction(label, self.main_window)
+                act.setEnabled(False)
+                self.hotkeys_menu.addAction(act)
+        except Exception as e:
+            self.logger.error(f"Failed to populate hotkeys menu: {e}")
 
     def get_icon(self, icon_name="icon.png"):
         """Загружает иконку из файла.
@@ -98,6 +140,8 @@ class TrayManager:
 
             # Сброс доступен, если таймер запущен
             self.reset_action.setEnabled(running)
+            # Обновляем список хоткеев (на случай смены настроек в рантайме)
+            self._populate_hotkeys_menu()
         except Exception as e:
             self.logger.error(f"Failed to update tray menu state: {e}")
 

@@ -197,8 +197,9 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self.game_blocker = GameBlocker(self.settings)
         self.timer_manager = TimerManager(self, self.game_blocker, self.gui_manager, self.settings)
         self.hotkey_manager = HotkeyManager()
-        self.activity_monitor = ActivityMonitor(self.settings)
+        # Менеджер системного трея (иконка и меню)
         self.tray_manager = TrayManager(self)
+        self.activity_monitor = ActivityMonitor(self.settings)
         self.achievement_manager = AchievementManager(self.settings, notification_callback=self.tray_manager.show_message)
         self.daily_limit_seconds = self.settings.get('daily_limit_hours', 2) * 3600
 
@@ -353,8 +354,28 @@ class GameTimerApp(QtWidgets.QMainWindow):
             self.logger.error(f"Ошибка обновления статистики: {e}")
 
     def _init_hotkeys(self):
+        # Встроенные хоткеи изменения лимита и разблокировки (оставляем)
         self.hotkey_manager.register_limit_hotkeys(self.increase_daily_limit, self.decrease_daily_limit)
         self.hotkey_manager.register_blocker_hotkey(self.game_blocker.unblock)
+
+        # Регистрация хоткеев из настроек
+        self.hotkey_manager.register_from_settings(
+            self.settings,
+            callbacks={
+                "start": self.start_timer,
+                "pause_resume": self.pause_resume,
+                "reset": self.reset_timer,
+                "add_5_min": self.add_5_minutes,
+            }
+        )
+
+    def pause_resume(self):
+        """Тоггл паузы/продолжения для хоткея."""
+        self.timer_manager.toggle_pause()
+
+    def add_5_minutes(self):
+        """Быстро добавляет +5 минут к таймеру (если запущен)."""
+        self.timer_manager.add_minutes(5)
 
     def increase_daily_limit(self): self.daily_limit_seconds += 600; self.update_stats()
     def decrease_daily_limit(self): self.daily_limit_seconds = max(0, self.daily_limit_seconds - 600); self.update_stats()

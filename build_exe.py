@@ -1,82 +1,84 @@
-import PyInstaller.__main__
 """
 Файл: build_exe.py
 
-Скрипт для сборки и упаковки приложения Game Timer с помощью PyInstaller.
+Скрипт сборки и упаковки приложения Game Timer с помощью PyInstaller.
+Делает устойчивой сборку: выбирает иконку по наличию, добавляет существующие ресурсы,
+и использует актуальные скрытые импорты под текущий стек (PyQt5, psutil, keyboard, win32*).
 """
 
 import os
+import PyInstaller.__main__
 
-# Список всех Python файлов проекта
-project_files = [
-    'game_timer.py',
-    'timer_manager.py',
-    'game_blocker.py',
-    'block_screen.py',
-    'activity_monitor.py',
-    'achievement_manager.py',
-    'autostart_manager.py',
-    'hotkey_manager.py',
-    'logger.py',
-    'notification_window.py',
-    'process_manager.py',
-    'tray_manager.py',
 
-]
+def exist(path: str) -> bool:
+    return os.path.exists(path)
 
-# Создаем строку с данными для добавления
-data_files = [
-    '--add-data=Icon_game_timer.png;.',
-    '--add-data=achievements.json;.',
-    '--add-data=README.md;.',
-    '--add-data=requirements.txt;.',
-    '--add-data=logs;logs'  # Добавляем папку с логами
-]
 
-# Скрытые импорты
-hidden_imports = [
-    '--hidden-import=PIL._tkinter_finder',
-    '--hidden-import=pystray._win32',
-    '--hidden-import=win32com.client',
-    '--hidden-import=keyboard',
-    '--hidden-import=psutil',
-    '--hidden-import=PIL',
-    '--hidden-import=PIL.Image',
-    '--hidden-import=PIL.ImageDraw',
-    '--hidden-import=win32gui',
-    '--hidden-import=win32con',
-    '--hidden-import=win32api',
-    '--hidden-import=win32com',
-    '--hidden-import=winreg',
-    '--hidden-import=sqlite3',
-    '--hidden-import=concurrent.futures',
-    '--hidden-import=threading',
-    '--hidden-import=queue',
-    '--hidden-import=json',
-    '--hidden-import=datetime',
-    '--hidden-import=tkinter',
-    '--hidden-import=tkinter.ttk',
-    '--hidden-import=tkinter.messagebox'
-]
+def add_data_arg(src: str, dst: str = '.') -> str:
+    return f"--add-data={src};{dst}"
+
 
 if __name__ == "__main__":
-    PyInstaller.__main__.run(
-        [
-            '--onefile',
-            '--noconsole',
-            '--icon=Icon_game_timer.png',
-            *data_files,
-            *hidden_imports,
-            'game_timer.py'
-        ]
-    )
+    base_dir = os.path.dirname(__file__)
 
-# Объединяем все опции
-options = (
-    build_options +
-    hidden_imports +
-    data_files
-)
+    # Динамический выбор иконки: prefer .ico
+    icon_candidates = [
+        os.path.join(base_dir, 'timer.ico'),
+        os.path.join(base_dir, 'Icon_game_timer.png'),
+    ]
+    icon_arg = None
+    for ico in icon_candidates:
+        if exist(ico):
+            icon_arg = f"--icon={ico}"
+            break
 
-# Запускаем сборку
-PyInstaller.__main__.run(options)
+    # Ресурсы (добавляем только существующие)
+    maybe_data = [
+        ('Icon_game_timer.png', '.'),
+        ('timer.ico', '.'),
+        ('achievements.json', '.'),
+        ('settings.json', '.'),
+        ('README.md', '.'),
+        ('requirements.txt', '.'),
+        ('logs', 'logs'),  # папка логов
+    ]
+    data_files = []
+    for src, dst in maybe_data:
+        full = os.path.join(base_dir, src)
+        if exist(full):
+            data_files.append(add_data_arg(full, dst))
+
+    # Скрытые импорты под текущие зависимости
+    hidden_imports = [
+        '--hidden-import=keyboard',
+        '--hidden-import=psutil',
+        '--hidden-import=win32gui',
+        '--hidden-import=win32con',
+        '--hidden-import=win32api',
+        '--hidden-import=win32com.client',
+        '--hidden-import=winreg',
+        '--hidden-import=sqlite3',
+    ]
+
+    build_args = [
+        '--onefile',
+        '--noconsole',
+    ]
+
+    if icon_arg:
+        build_args.append(icon_arg)
+
+    build_args.extend(data_files)
+    build_args.extend(hidden_imports)
+
+    # Главный модуль
+    build_args.append(os.path.join(base_dir, 'game_timer.py'))
+
+    # Необязательно: задать dist/build пути
+    # build_args += [
+    #     f"--distpath={os.path.join(base_dir, 'dist')}",
+    #     f"--workpath={os.path.join(base_dir, 'build')}",
+    #     '--clean',
+    # ]
+
+    PyInstaller.__main__.run(build_args)

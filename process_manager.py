@@ -16,7 +16,8 @@ class ProcessManager:
         self.logger = logging.getLogger('ProcessManager')
         self._cache = {}
         self._cache_time = 0
-        self._cache_lifetime = 60
+        # Время жизни кэша берём из настроек проверки процессов (в секундах)
+        self._cache_lifetime = max(1, int(self.settings.get('process_check_interval_ms', 5000) / 1000))
         self._usage_db = "usage_stats.db"
         self._last_cleanup = time.time()
         self._cleanup_interval = 3600
@@ -24,6 +25,7 @@ class ProcessManager:
         self._buffer_size = 100
         self._last_flush = time.time()
         self._flush_interval = 300
+        self._monitored_set = None  # кэш множества целевых процессов (lowercase)
         self._init_db()
 
     def _init_db(self):
@@ -50,6 +52,14 @@ class ProcessManager:
     def get_monitored_processes(self):
         """Возвращает список отслеживаемых процессов из настроек"""
         return self.settings.get("processes", [])
+
+    def _get_monitored_set(self):
+        """Возвращает множество имён процессов в lowercase для быстрого сравнения."""
+        procs = self.settings.get("processes", []) or []
+        try:
+            return set(p.strip().lower() for p in procs if p and isinstance(p, str))
+        except Exception:
+            return set()
 
     def get_active_processes(self):
         """Получение списка активных процессов с кэшированием"""
@@ -161,27 +171,37 @@ class ProcessManager:
             self.logger.error(f"Error cleaning up old data: {e}")
 
     def is_any_monitored_process_running(self):
-        """Проверяет, запущен ли хотя бы один из отслеживаемых процессов"""
-        monitored_processes = self.get_monitored_processes()
-        for process_name in monitored_processes:
-            if self.is_process_running(process_name):
+        """Проверяет, запущен ли хотя бы один из отслеживаемых процессов (быстро через пересечение множеств)."""
+        monitored = self._get_monitored_set()
+        if not monitored:
+            return False
+        active = set(self.get_active_processes())
+        if active & monitored:
+            return True
+        # Если прямого совпадения по имени нет, делаем более дорогую проверку по путям (редкий случай)
+        for name in monitored:
+            if self.is_process_running(name):
                 return True
         return False
 
 
     def is_process_running(self, process_name):
-        """Проверяет, запущен ли указанный процесс"""
-        process_lower = process_name.lower()
+        """Проверяет, запущен ли указанный процесс. Сначала по кэшу имён, затем (если нужно) по путям."""
+        process_lower = (process_name or "").lower()
+        if not process_lower:
+            return False
+        # Быстрая проверка по кэшу имён
+        if process_lower in self._cache:
+            return True
+        # Медленная проверка по путям
         for proc in psutil.process_iter(['name', 'exe']):
             try:
                 proc_info = proc.info
-                if not proc_info or 'name' not in proc_info:
+                if not proc_info:
                     continue
-                proc_name = proc_info['name'].lower()
-                proc_path = proc_info.get('exe', '')
-                if proc_path:
-                    proc_path = proc_path.lower()
-                if process_lower in proc_name or (proc_path and process_lower in proc_path):
+                name = (proc_info.get('name') or '').lower()
+                exe = (proc_info.get('exe') or '').lower()
+                if process_lower in name or (exe and process_lower in exe):
                     return True
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue

@@ -80,6 +80,24 @@ class TimerManager:
         self.update_button_states()
         self.logger.info("Timer paused")
 
+    def toggle_pause(self):
+        """Переключает состояние паузы: пауза/продолжить."""
+        try:
+            if not self.running:
+                return
+            if self.paused:
+                # Resume
+                self.paused = False
+                self._start_time = time.time()
+                self.qtimer.start(1000)
+                self.update_button_states()
+                self.logger.info("Timer resumed")
+            else:
+                # Pause
+                self.pause_timer()
+        except Exception as e:
+            self.logger.error(f"Error toggling pause: {str(e)}")
+
 
 
     def reset_timer(self):
@@ -94,6 +112,25 @@ class TimerManager:
         self.update_timer_display()
         self.update_button_states()
         self.logger.info("Timer reset")
+
+    def add_minutes(self, minutes: int):
+        """Добавляет минуты к таймеру. Для countdown увеличивает оставшееся время,
+        для countup — просто добавляет к счётчику (визуально растит достигнутое время)."""
+        try:
+            delta = int(minutes) * 60
+            if delta == 0:
+                return
+            if not self.running:
+                # Если таймер не запущен — игнорируем (можно обсудить поведение)
+                return
+            if self.mode == "countdown":
+                self.remaining_time = max(0, self.remaining_time + delta)
+            else:  # countup
+                self.remaining_time = max(0, self.remaining_time + delta)
+            self.update_timer_display()
+            self.logger.info(f"Timer +{minutes} min applied")
+        except Exception as e:
+            self.logger.error(f"Error adding minutes: {str(e)}")
 
     def update_timer_display(self):
         """Обновляет отображение времени"""
