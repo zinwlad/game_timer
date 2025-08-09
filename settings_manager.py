@@ -34,6 +34,8 @@ class SettingsManager:
             "periodic_tasks_interval_ms": 1000,
             "process_check_interval_ms": 5000,
             "notification_check_delay_ms": 10000,
+            "notification_countdown_seconds": 15,
+            "passive_logging_interval_ms": 600000,
             "autostart": False,
             "hotkeys": {
                 "pause": "ctrl+space",

@@ -4,8 +4,10 @@
 import sys
 import logging
 import ctypes
+import time
 from PyQt5 import QtWidgets, QtCore, QtGui
 from notification_window import NotificationWindow
+from countdown_overlay import CountdownOverlay
 
 from settings_manager import SettingsManager
 from game_blocker import GameBlocker
@@ -202,6 +204,9 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self.activity_monitor = ActivityMonitor(self.settings)
         self.achievement_manager = AchievementManager(self.settings, notification_callback=self.tray_manager.show_message)
         self.daily_limit_seconds = self.settings.get('daily_limit_hours', 2) * 3600
+        self.timestamp = time.time()
+        # Оверлей обратного отсчета (не мешает кликам)
+        self.countdown_overlay = CountdownOverlay()
 
         # Сброс флага истечения таймера
         self.game_blocker.update_timer_state(False)
@@ -216,6 +221,10 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self.periodic_timer = QtCore.QTimer(self)
         self.periodic_timer.timeout.connect(self.run_periodic_tasks)
         self.periodic_timer.start(self.settings.get('periodic_tasks_interval_ms', 1000))
+
+        self.passive_logging_timer = QtCore.QTimer(self)
+        self.passive_logging_timer.timeout.connect(self.log_passive_usage)
+        self.passive_logging_timer.start(self.settings.get('passive_logging_interval_ms', 60000))
 
     def setup_connections(self):
         self._init_hotkeys()
@@ -302,7 +311,9 @@ class GameTimerApp(QtWidgets.QMainWindow):
                 message="Время истекло!\nТы молодец, пора сделать перерыв.",
                 on_close_callback=self._on_notification_closed
             )
-            self.notification_window.show()
+            # Показываем уведомление (без авто-закрытия) и отдельный оверлей обратного отсчета
+            self.notification_window.show(duration=0)
+            self._show_countdown_overlay(self.settings.get('notification_countdown_seconds', 15))
             self.notification_shown = True
             
             # Запускаем таймер на 10 секунд для проверки завершения игры
@@ -335,12 +346,55 @@ class GameTimerApp(QtWidgets.QMainWindow):
             self.logger.warning("Игра не завершена в течение 10 секунд после уведомления.")
             self.game_blocker.update_timer_state(True)
             self.game_blocker.start_blocking_sequence()
+            # Скрываем оверлей, если он еще отображается
+            self._hide_countdown_overlay()
         else:
             self.logger.info("Игра завершена в течение 10 секунд после уведомления.")
+            # Игра закрыта — убираем оверлей
+            self._hide_countdown_overlay()
 
     def check_achievements(self):
         """Проверяет ежедневные достижения при запуске."""
         self.achievement_manager.on_daily_check()
+
+    def log_passive_usage(self):
+        """Пассивный учет времени: каждые N секунд добавляем время для запущенных игр,
+        если пользователь не запускал таймер вручную."""
+        try:
+            if getattr(self, 'manual_start', False):
+                return
+            # Проверяем, запущены ли отслеживаемые процессы
+            active = set(self.process_manager.get_active_processes())
+            monitored = set((p or '').strip().lower() for p in (self.process_manager.get_monitored_processes() or []))
+            if not active or not monitored:
+                return
+            running_tracked = active & monitored
+            if not running_tracked:
+                return
+            interval_sec = max(60, int(self.settings.get('passive_logging_interval_ms', 600000) / 1000))
+            for proc_name in running_tracked:
+                self.process_manager.log_usage(proc_name, interval_sec)
+            self.logger.debug(f"Пассивно залогировано {interval_sec} сек для: {', '.join(sorted(running_tracked))}")
+            # Обновим статистику на экране
+            self.update_stats()
+        except Exception as e:
+            self.logger.error(f"Ошибка пассивного учёта времени: {e}")
+
+    # --- Overlay helpers ---
+    def _show_countdown_overlay(self, seconds: int):
+        try:
+            secs = int(seconds or 0)
+            if secs <= 0:
+                return
+            self.countdown_overlay.start(secs)
+        except Exception as e:
+            self.logger.error(f"Не удалось показать оверлей обратного отсчета: {e}")
+
+    def _hide_countdown_overlay(self):
+        try:
+            self.countdown_overlay.stop()
+        except Exception:
+            pass
 
     def update_stats(self):
         try:

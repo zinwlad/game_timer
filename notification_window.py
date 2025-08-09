@@ -66,6 +66,8 @@ class NotificationWindow(QtWidgets.QDialog):
         self.message_label.setStyleSheet("color: #f5f6fa;")
         layout.addWidget(self.message_label)
 
+        # (Отсчет перенесен в отдельный оверлей CountdownOverlay)
+
         # Кнопка закрытия
         close_btn = QtWidgets.QPushButton("Закрыть")
         close_btn.setFont(QtGui.QFont("Montserrat", 14))
@@ -98,6 +100,7 @@ class NotificationWindow(QtWidgets.QDialog):
         self._move_to_bottom_right()
         # Анимация появления
         self._animate_show()
+        # Без внутреннего обратного отсчета: управление только через кнопку "Закрыть"
 
     def _move_to_bottom_right(self):
         screen_geo = QtWidgets.QApplication.desktop().availableGeometry()
@@ -115,10 +118,12 @@ class NotificationWindow(QtWidgets.QDialog):
             self.on_close_callback()
         super().closeEvent(event)
 
-    def show(self, duration=15):
-        """Показать уведомление"""
+    def show(self, duration=0):
+        """Показать уведомление (без авто-закрытия по умолчанию)"""
         super().show()
         winsound.PlaySound("SystemExclamation", winsound.SND_ASYNC)
+        # Если передана продолжительность > 0, закроем окно по таймеру
+        duration = int(duration or 0)
         if duration > 0:
             QtCore.QTimer.singleShot(duration * 1000, self.accept)
 
