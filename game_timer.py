@@ -3,6 +3,7 @@
 """
 import sys
 import logging
+import ctypes
 from PyQt5 import QtWidgets, QtCore, QtGui
 from notification_window import NotificationWindow
 
@@ -15,6 +16,22 @@ from activity_monitor import ActivityMonitor
 from achievement_manager import AchievementManager
 from sound_manager import SoundManager
 from tray_manager import TrayManager
+
+# --- Single instance helper (Windows named mutex) ---
+def _acquire_single_instance_mutex():
+    """Возвращает (handle, acquired). Если уже запущено — acquired=False."""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        mutex = kernel32.CreateMutexW(None, False, "Global\\GameTimerMutex")
+        last_error = kernel32.GetLastError()
+        ERROR_ALREADY_EXISTS = 183
+        if mutex == 0:
+            return None, True  # не удалось создать — не блокируем запуск
+        if last_error == ERROR_ALREADY_EXISTS:
+            return mutex, False
+        return mutex, True
+    except Exception:
+        return None, True
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -135,7 +152,7 @@ class GUIManager(QtWidgets.QWidget):
         self.update_process_list()
         self.process_timer = QtCore.QTimer(self)
         self.process_timer.timeout.connect(self.update_process_list)
-        self.process_timer.start(5000)  # Проверка каждые 5 секунд
+        self.process_timer.start(self.app.settings.get('process_check_interval_ms', 5000))  # Настраиваемый интервал проверки
 
     def update_process_list(self):
         if self.process_manager is None: return
@@ -197,7 +214,7 @@ class GameTimerApp(QtWidgets.QMainWindow):
 
         self.periodic_timer = QtCore.QTimer(self)
         self.periodic_timer.timeout.connect(self.run_periodic_tasks)
-        self.periodic_timer.start(1000)
+        self.periodic_timer.start(self.settings.get('periodic_tasks_interval_ms', 1000))
 
     def setup_connections(self):
         self._init_hotkeys()
@@ -290,7 +307,7 @@ class GameTimerApp(QtWidgets.QMainWindow):
             # Запускаем таймер на 10 секунд для проверки завершения игры
             self.post_notification_timer = QtCore.QTimer(self)
             self.post_notification_timer.timeout.connect(self._check_game_after_notification)
-            self.post_notification_timer.start(10000)
+            self.post_notification_timer.start(self.settings.get('notification_check_delay_ms', 10000))
         elif not any_game_running and timer_running and is_countup:
             self.timer_manager.pause_timer()
             self.logger.info("Все игры закрыты, авто-таймер на паузе.")
@@ -304,7 +321,7 @@ class GameTimerApp(QtWidgets.QMainWindow):
         # Запускаем таймер на 10 секунд для проверки завершения игры
         self.post_notification_timer = QtCore.QTimer(self)
         self.post_notification_timer.timeout.connect(self._check_game_after_notification)
-        self.post_notification_timer.start(10000)
+        self.post_notification_timer.start(self.settings.get('notification_check_delay_ms', 10000))
 
     def _check_game_after_notification(self):
         """Проверяет, завершена ли игра через 10 секунд после уведомления"""
@@ -361,6 +378,20 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self.gui_manager.seconds.setText(str(seconds))
 
 if __name__ == "__main__":
+    # Гарантия единственного экземпляра через именованный mutex
+    _mutex_handle, _acquired = _acquire_single_instance_mutex()
+    if not _acquired:
+        try:
+            ctypes.windll.user32.MessageBoxW(
+                None,
+                "Приложение уже запущено.",
+                "Game Timer",
+                0x10  # MB_ICONHAND
+            )
+        except Exception:
+            pass
+        sys.exit(0)
+
     app = QtWidgets.QApplication(sys.argv)
     if not QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
         QtWidgets.QMessageBox.critical(None, "Критическая ошибка", "Системный трей не поддерживается.")
@@ -368,4 +399,12 @@ if __name__ == "__main__":
     app.setQuitOnLastWindowClosed(False)
     window = GameTimerApp(app)
     window.show()
-    sys.exit(app.exec_())
+    try:
+        rc = app.exec_()
+    finally:
+        try:
+            if _mutex_handle:
+                ctypes.windll.kernel32.CloseHandle(_mutex_handle)
+        except Exception:
+            pass
+    sys.exit(rc)

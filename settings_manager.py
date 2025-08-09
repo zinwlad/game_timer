@@ -30,6 +30,10 @@ class SettingsManager:
             },
             "theme": "light",
             "check_interval": 5,
+            # Интервалы/задержки в миллисекундах
+            "periodic_tasks_interval_ms": 1000,
+            "process_check_interval_ms": 5000,
+            "notification_check_delay_ms": 10000,
             "autostart": False,
             "hotkeys": {
                 "pause": "ctrl+space",
@@ -38,7 +42,16 @@ class SettingsManager:
             "block_delay": 30,
             "notification_sound": True,
             "start_minimized": False,
-            "block_screen_message": "Время игры истекло!\nПожалуйста, сделайте перерыв."
+            "block_screen_message": "Время игры истекло!\nПожалуйста, сделайте перерыв.",
+            # Параметры логирования
+            "logging": {
+                "file_level": "DEBUG",
+                "console_level": "WARNING",
+                "max_bytes": 1000000,
+                "backup_count": 5,
+                "log_dir": "logs",
+                "log_file": "game_timer.log"
+            }
         }
         self.load()
 

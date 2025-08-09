@@ -13,9 +13,9 @@ import logging
 import time
 import psutil
 
-# Настройка логгера
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('TimerManager')
+# Настройка логгера управляется центральным Logger; не вызываем basicConfig здесь
+# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# logger = logging.getLogger('TimerManager')
 
 class TimerManager:
     def __init__(self, root, game_blocker, ui_manager, settings, notification_enabled=True):

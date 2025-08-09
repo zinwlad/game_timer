@@ -1,6 +1,7 @@
 import logging
 from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction
 from PyQt5.QtGui import QIcon
+from PyQt5 import QtCore
 import os
 
 class TrayManager:
@@ -21,12 +22,23 @@ class TrayManager:
 
         menu = QMenu()
         show_action = QAction("Показать", self.main_window)
+        self.start_action = QAction("Старт", self.main_window)
+        self.pause_action = QAction("Пауза", self.main_window)
+        self.reset_action = QAction("Сброс", self.main_window)
         quit_action = QAction("Выход", self.main_window)
 
         show_action.triggered.connect(self.main_window.show_main_window)
+        self.start_action.triggered.connect(self.main_window.start_timer)
+        self.pause_action.triggered.connect(self.main_window.pause_timer)
+        self.reset_action.triggered.connect(self.main_window.reset_timer)
         quit_action.triggered.connect(self.main_window.quit_app)
 
         menu.addAction(show_action)
+        menu.addSeparator()
+        menu.addAction(self.start_action)
+        menu.addAction(self.pause_action)
+        menu.addAction(self.reset_action)
+        menu.addSeparator()
         menu.addAction(quit_action)
 
         self.tray_icon.setContextMenu(menu)
@@ -34,6 +46,11 @@ class TrayManager:
 
         self.tray_icon.activated.connect(self.on_tray_icon_activated)
         self.logger.info("Tray Manager initialized.")
+
+        # Таймер для обновления пунктов меню по состоянию таймера
+        self._menu_update_timer = QtCore.QTimer(self.main_window)
+        self._menu_update_timer.timeout.connect(self.update_menu_state)
+        self._menu_update_timer.start(1000)
 
     def get_icon(self, icon_name="icon.png"):
         """Загружает иконку из файла.
@@ -56,6 +73,33 @@ class TrayManager:
         """Обрабатывает клики по иконке в трее."""
         if reason == QSystemTrayIcon.DoubleClick:
             self.main_window.show_main_window()
+
+    def update_menu_state(self):
+        """Обновляет текст и доступность пунктов меню в зависимости от состояния таймера."""
+        try:
+            tm = getattr(self.main_window, 'timer_manager', None)
+            if tm is None:
+                # Без таймера: всё выключаем кроме Старт и Показать/Выход
+                self.start_action.setEnabled(True)
+                self.pause_action.setEnabled(False)
+                self.reset_action.setEnabled(False)
+                self.pause_action.setText("Пауза")
+                return
+
+            running = tm.is_running()
+            paused = tm.is_paused()
+
+            # Старт доступен, если таймер не запущен
+            self.start_action.setEnabled(not running)
+
+            # Пауза/Продолжить доступна, если таймер запущен
+            self.pause_action.setEnabled(running)
+            self.pause_action.setText("Продолжить" if paused else "Пауза")
+
+            # Сброс доступен, если таймер запущен
+            self.reset_action.setEnabled(running)
+        except Exception as e:
+            self.logger.error(f"Failed to update tray menu state: {e}")
 
     def set_icon(self, icon_name):
         """Меняет иконку в трее."""
