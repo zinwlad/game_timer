@@ -1,95 +1,66 @@
 import logging
-import pystray
-"""
-Файл: tray_manager.py
-
-Модуль для управления значком приложения в системном трее и взаимодействия через контекстное меню.
-Используется в приложении Game Timer.
-"""
-from PIL import Image
+from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction
+from PyQt5.QtGui import QIcon
 import os
-import tkinter as tk
-from typing import Callable
 
 class TrayManager:
-    def __init__(self, show_window_callback: Callable, quit_callback: Callable):
-        """Инициализация менеджера трея"""
-        self.logger = logging.getLogger('TrayManager')
-        self.show_window_callback = show_window_callback
-        self.quit_callback = quit_callback
-        self.icon = None
-        self._setup_tray_icon()
-        
-    def _create_menu(self):
-        """Создает меню для иконки в трее"""
-        return pystray.Menu(
-            pystray.MenuItem("Показать", self._show_window),
-            pystray.MenuItem("Выход", self._quit_app)
-        )
-        
-    def _setup_tray_icon(self):
-        """Настройка иконки в трее"""
-        try:
-            # Создаем простую иконку
-            image = Image.new('RGB', (64, 64), color='red')
-            
-            # Если есть файл иконки Icon_game_timer.png в корне проекта, используем его
-            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-            icon_path = os.path.join(project_root, 'Icon_game_timer.png')
-            if os.path.exists(icon_path):
-                image = Image.open(icon_path)
-            else:
-                # fallback: icon.png рядом с этим файлом
-                local_icon = os.path.join(os.path.dirname(__file__), 'icon.png')
-                if os.path.exists(local_icon):
-                    image = Image.open(local_icon)
-            
-            # Создаем иконку
-            self.icon = pystray.Icon(
-                "game_timer",
-                image,
-                "Game Timer",
-                self._create_menu()
-            )
-            
-            # Запускаем иконку в отдельном потоке
-            self.icon.run_detached()
-            self.logger.info("Tray icon initialized")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to setup tray icon: {str(e)}")
-            
-    def _show_window(self):
-        """Показывает главное окно"""
-        try:
-            self.show_window_callback()
-        except Exception as e:
-            self.logger.error(f"Failed to show window: {str(e)}")
-            
-    def _quit_app(self):
-        """Закрывает приложение"""
-        try:
-            self.stop()
-            self.quit_callback()
-        except Exception as e:
-            self.logger.error(f"Failed to quit app: {str(e)}")
-            
-    def stop(self):
-        """Останавливает иконку в трее"""
-        try:
-            if self.icon:
-                self.icon.stop()
-                self.logger.info("Tray icon stopped")
-        except Exception as e:
-            self.logger.error(f"Failed to stop tray icon: {str(e)}")
-            
-    def update_icon(self, icon_path: str):
-        """Обновляет иконку"""
-        try:
-            if os.path.exists(icon_path):
-                image = Image.open(icon_path)
-                if self.icon:
-                    self.icon.icon = image
-                    self.logger.info("Tray icon updated")
-        except Exception as e:
-            self.logger.error(f"Failed to update icon: {str(e)}")
+    """
+    Управляет иконкой приложения в системном трее с использованием PyQt5.
+    """
+    def __init__(self, app_window):
+        """
+        Инициализация менеджера трея.
+        :param app_window: Экземпляр главного окна приложения (GameTimerApp).
+        """
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.app = app_window.app
+        self.main_window = app_window
+
+        self.tray_icon = QSystemTrayIcon(self.get_icon(), self.main_window)
+        self.tray_icon.setToolTip("Game Timer")
+
+        menu = QMenu()
+        show_action = QAction("Показать", self.main_window)
+        quit_action = QAction("Выход", self.main_window)
+
+        show_action.triggered.connect(self.main_window.show_main_window)
+        quit_action.triggered.connect(self.main_window.quit_app)
+
+        menu.addAction(show_action)
+        menu.addAction(quit_action)
+
+        self.tray_icon.setContextMenu(menu)
+        self.tray_icon.show()
+
+        self.tray_icon.activated.connect(self.on_tray_icon_activated)
+        self.logger.info("Tray Manager initialized.")
+
+    def get_icon(self, icon_name="icon.png"):
+        """Загружает иконку из файла.
+        Порядок поиска: timer.ico -> Icon_game_timer.png -> icon.png -> стандартная.
+        """
+        base_dir = os.path.dirname(__file__)
+        candidates = [
+            os.path.join(base_dir, 'timer.ico'),
+            os.path.join(base_dir, 'Icon_game_timer.png'),
+            os.path.join(base_dir, icon_name),
+        ]
+        for path in candidates:
+            if os.path.exists(path):
+                return QIcon(path)
+        self.logger.warning("No tray icon found (timer.ico/Icon_game_timer.png/icon.png). Using default icon.")
+        default_icon = self.main_window.style().standardIcon(self.main_window.style().SP_ComputerIcon)
+        return default_icon
+
+    def on_tray_icon_activated(self, reason):
+        """Обрабатывает клики по иконке в трее."""
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.main_window.show_main_window()
+
+    def set_icon(self, icon_name):
+        """Меняет иконку в трее."""
+        self.tray_icon.setIcon(self.get_icon(icon_name))
+
+    def show_message(self, title, message, icon=QSystemTrayIcon.Information, msecs=5000):
+        """Показывает уведомление из трея."""
+        self.tray_icon.showMessage(title, message, icon, msecs)

@@ -159,58 +159,15 @@ class ProcessManager:
             self.logger.info("Old data cleaned up")
         except sqlite3.Error as e:
             self.logger.error(f"Error cleaning up old data: {e}")
-            if current_time - self._last_cleanup >= self._cleanup_interval:
-                self.cleanup_old_data()
-                self._last_cleanup = current_time
-            return list(self._cache.keys())
-        except Exception as e:
-            self.logger.error(f"Error getting active processes: {e}")
-            return list(self._cache.keys()) if self._cache else []
 
-    def set_ui_elements(self, apps_list):
-        """Устанавливает UI элементы"""
-        self.apps_list = apps_list
+    def is_any_monitored_process_running(self):
+        """Проверяет, запущен ли хотя бы один из отслеживаемых процессов"""
+        monitored_processes = self.get_monitored_processes()
+        for process_name in monitored_processes:
+            if self.is_process_running(process_name):
+                return True
+        return False
 
-    def update_apps_list(self):
-        """Обновляет список отслеживаемых приложений"""
-        try:
-            for item in self.apps_list.get_children():
-                self.apps_list.delete(item)
-            monitored_processes = self.settings.get("processes", [])
-            running_processes = []
-            for proc in psutil.process_iter(['name', 'exe']):
-                try:
-                    proc_info = proc.info
-                    if not proc_info or 'name' not in proc_info:
-                        continue
-                    proc_name = proc_info['name']
-                    if not proc_name:
-                        continue
-                    proc_name = proc_name.lower()
-                    proc_path = proc_info.get('exe', '') or ''
-                    proc_path = proc_path.lower()
-                    if proc_name or proc_path:
-                        running_processes.append((proc_name, proc_path))
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    continue
-                except Exception as e:
-                    self.logger.debug(f"Error getting process info: {str(e)}")
-                    continue
-            for process in monitored_processes:
-                if not process:
-                    continue
-                process_lower = process.lower()
-                is_running = any(
-                    (proc_name and process_lower in proc_name) or 
-                    (proc_path and process_lower in proc_path)
-                    for proc_name, proc_path in running_processes
-                )
-                status = "Запущен" if is_running else "Не запущен"
-                self.apps_list.insert("", "end", text=process, values=(status,))
-            self.root.after(1000, self.update_apps_list)
-        except Exception as e:
-            self.logger.error(f"Error updating apps list: {str(e)}")
-            self.root.after(1000, self.update_apps_list)
 
     def is_process_running(self, process_name):
         """Проверяет, запущен ли указанный процесс"""
@@ -221,7 +178,9 @@ class ProcessManager:
                 if not proc_info or 'name' not in proc_info:
                     continue
                 proc_name = proc_info['name'].lower()
-                proc_path = proc_info.get('exe', '').lower()
+                proc_path = proc_info.get('exe', '')
+                if proc_path:
+                    proc_path = proc_path.lower()
                 if process_lower in proc_name or (proc_path and process_lower in proc_path):
                     return True
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):

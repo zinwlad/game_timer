@@ -31,6 +31,7 @@ class TimerManager:
         self.mode = "countdown"
         self._start_time = None  # Для расчета прошедшего времени
         self._elapsed_before_pause = 0
+        self.expired = False  # Явный флаг истечения таймера
         
         # Инициализация логгера
         self.logger = logging.getLogger('TimerManager')
@@ -61,6 +62,7 @@ class TimerManager:
             self.paused = False
             self._start_time = time.time()
             self._elapsed_before_pause = 0
+            self.expired = False
             self.update_timer_display()
             self.update_button_states()
             self.qtimer.start(1000)
@@ -78,15 +80,7 @@ class TimerManager:
         self.update_button_states()
         self.logger.info("Timer paused")
 
-    def resume_timer(self):
-        """Продолжение таймера"""
-        if not self.running or not self.paused:
-            return
-        self.paused = False
-        self._start_time = time.time()
-        self.qtimer.start(1000)
-        self.update_button_states()
-        self.logger.info("Timer resumed")
+
 
     def reset_timer(self):
         """Сбрасывает таймер"""
@@ -95,6 +89,7 @@ class TimerManager:
         self.remaining_time = 0
         self._start_time = None
         self._elapsed_before_pause = 0
+        self.expired = False
         self.qtimer.stop()
         self.update_timer_display()
         self.update_button_states()
@@ -167,84 +162,29 @@ class TimerManager:
         self._start_time = None
         self._elapsed_before_pause = 0
         self.game_blocker.update_timer_state(True)
+        self.expired = True
 
     def _handle_timer_expiration(self):
-        """Обрабатывает истечение таймера"""
         self.running = False
         self.qtimer.stop()
         self._finalize_timer_expiration()
-        if self.notification_enabled:
-            # Показываем уведомление о завершении таймера с callback
-            self.notification_closed = False
-            def on_notification_close():
-                self.notification_closed = True
-            notification = NotificationWindow("Время истекло!", "Пора сделать перерыв!\nПожалуйста, закройте игру и нажмите ОК.", on_close_callback=on_notification_close)
-            notification.exec_()  # Модально ждём закрытия окна
-            # После нажатия ОК ищем запущенные игры и посылаем ESC, не завершаем процессы
-            import ctypes
-            import time
-            import sys
-            import platform
-            import psutil
-            import os
-            import signal
-            from PyQt5.QtWidgets import QApplication
-            from PyQt5.QtCore import QTimer
-            import subprocess
-
-            games_were_running = False
-            for proc_name in self.settings.get("processes", []):
-                for proc in psutil.process_iter(['name', 'exe', 'pid']):
-                    try:
-                        if not proc.info or 'name' not in proc.info:
-                            continue
-                        pname = proc.info['name'].lower() if proc.info.get('name') else ''
-                        ppath = proc.info.get('exe', '').lower() if proc.info.get('exe') else ''
-                        if proc_name.lower() in pname or proc_name.lower() in ppath:
-                            games_were_running = True
-                            # Попытаться отправить ESC в окно процесса (только для Windows)
-                            try:
-                                import win32gui, win32con, win32process
-                                pid = proc.info['pid']
-                                def enum_handler(hwnd, result):
-                                    _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
-                                    if found_pid == pid:
-                                        # Активируем окно
-                                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                                        win32gui.SetForegroundWindow(hwnd)
-                                        # Отправляем ESC
-                                        win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, 0x1B, 0)
-                                        win32gui.PostMessage(hwnd, win32con.WM_KEYUP, 0x1B, 0)
-                                win32gui.EnumWindows(enum_handler, None)
-                            except Exception as esc_e:
-                                self.logger.warning(f"Не удалось послать ESC процессу {pname}: {esc_e}")
-                    except Exception:
-                        continue
-            if games_were_running:
-                # Показываем уведомление и блокируем
-                self.notification_closed = False
-                def on_notification_close():
-                    self.notification_closed = True
-                notification = NotificationWindow("Время истекло!", "Пора сделать перерыв!\nПожалуйста, закройте игру и нажмите ОК.", on_close_callback=on_notification_close)
-                notification.exec_()
-                self.game_blocker.start_blocking_sequence()
-                self.logger.info("Timer expired successfully")
-                try:
-                    winsound.PlaySound('SystemExclamation', winsound.SND_ASYNC)
-                except Exception:
-                    pass
-            else:
-                self.logger.info("Таймер завершился, но ни одной игры не было запущено — блокировка не требуется.")
-                pass
-
+        self.game_blocker.update_timer_state(True)
 
     def is_running(self):
-        """Возвращает True, если таймер запущен."""
+        """Возвращает True, если таймер запущен"""
         return self.running
+
+    def is_expired(self):
+        """Возвращает True, если таймер истек"""
+        return bool(self.expired)
 
     def is_paused(self):
         """Возвращает True, если таймер на паузе."""
         return self.paused
+
+    def get_mode(self):
+        """Возвращает текущий режим таймера (countdown/countup)."""
+        return self.mode
 
     def set_ui_elements(self, time_display, start_button, pause_button, reset_button):
         """Устанавливает UI элементы для таймера"""
@@ -263,14 +203,4 @@ class TimerManager:
             elapsed += time.time() - self._start_time
         return int(elapsed)
 
-    def timer_expired(self):
-        """Обработка истечения таймера"""
-        self.running = False
-        self.game_blocker.update_timer_state(True)
-        winsound.PlaySound("SystemExclamation", winsound.SND_ASYNC)
-        
-        if hasattr(self.ui_manager, 'show_notification'):
-            self.ui_manager.show_notification(
-                "Время истекло!",
-                "Пора сделать перерыв!"
-            )
+

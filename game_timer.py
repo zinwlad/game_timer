@@ -1,36 +1,36 @@
 """
-Файл: game_timer.py
-
-Главный модуль приложения Game Timer. Содержит основной класс GUIManager (интерфейс пользователя)
-и GameTimerApp (логика управления приложением, инициализация менеджеров, запуск GUI).
+Главный модуль приложения Game Timer.
 """
-
+import sys
+import logging
 from PyQt5 import QtWidgets, QtCore, QtGui
+from notification_window import NotificationWindow
+
+from settings_manager import SettingsManager
+from game_blocker import GameBlocker
+from timer_manager import TimerManager
+from process_manager import ProcessManager
+from hotkey_manager import HotkeyManager
+from activity_monitor import ActivityMonitor
+from achievement_manager import AchievementManager
+from sound_manager import SoundManager
 from tray_manager import TrayManager
 
-class GUIManager(QtWidgets.QWidget):
-    start_timer_signal = QtCore.pyqtSignal()
-    pause_timer_signal = QtCore.pyqtSignal()
-    reset_timer_signal = QtCore.pyqtSignal()
-    preset_applied_signal = QtCore.pyqtSignal(int, int, int)  # hours, minutes, seconds
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+class GUIManager(QtWidgets.QWidget):
+    """Управляет всеми элементами пользовательского интерфейса."""
     def __init__(self, app):
         super().__init__()
         self.app = app
-        self.process_timer = None
-        self.process_manager = None
-        self.hotkey_manager = None
-        self.daily_limit_seconds = 2 * 60 * 60  # 2 часа по умолчанию
-        self.autocountup_limit = self.daily_limit_seconds
-        self.autocountup_active = False
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.process_manager = None  # Будет установлен позже
         self._build_ui()
 
     def _build_ui(self):
-        # Основная компоновка
         main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setSpacing(16)
-        main_layout.setContentsMargins(16, 16, 16, 16)
-
+        # ... (UI code remains the same as the corrected version)
         # --- Статистика ---
         stats_group = QtWidgets.QGroupBox("Статистика")
         stats_layout = QtWidgets.QVBoxLayout()
@@ -104,368 +104,268 @@ class GUIManager(QtWidgets.QWidget):
         ]
         for text, h, m, s in presets:
             btn = QtWidgets.QPushButton(text)
-            btn.clicked.connect(lambda _, h=h, m=m, s=s: self.preset_applied_signal.emit(h, m, s))
+            btn.clicked.connect(lambda _, h=h, m=m, s=s: self.app.apply_preset(h, m, s))
             presets_layout.addWidget(btn)
         presets_group.setLayout(presets_layout)
         main_layout.addWidget(presets_group)
 
-        # --- Список приложений ---
-        apps_group = QtWidgets.QGroupBox("Список отслеживаемых приложений")
+        # --- Список процессов ---
+        apps_group = QtWidgets.QGroupBox("Отслеживаемые приложения")
         apps_layout = QtWidgets.QVBoxLayout()
         self.apps_list = QtWidgets.QListWidget()
         apps_layout.addWidget(self.apps_list)
+        proc_btn_layout = QtWidgets.QHBoxLayout()
+        self.add_proc_button = QtWidgets.QPushButton("Добавить")
+        self.remove_proc_button = QtWidgets.QPushButton("Удалить")
+        proc_btn_layout.addWidget(self.add_proc_button)
+        proc_btn_layout.addWidget(self.remove_proc_button)
+        apps_layout.addLayout(proc_btn_layout)
         apps_group.setLayout(apps_layout)
-        main_layout.addWidget(apps_group, stretch=1)
+        main_layout.addWidget(apps_group)
 
-        # --- Добавление/удаление процесса ---
-        input_layout = QtWidgets.QHBoxLayout()
-        self.process_input = QtWidgets.QLineEdit()
-        self.process_input.setPlaceholderText("Имя процесса.exe")
-        self.add_process_button = QtWidgets.QPushButton("Добавить")
-        self.remove_process_button = QtWidgets.QPushButton("Удалить")
-        input_layout.addWidget(self.process_input)
-        input_layout.addWidget(self.add_process_button)
-        input_layout.addWidget(self.remove_process_button)
-        main_layout.addLayout(input_layout)
-
-        self.add_process_button.clicked.connect(self.add_process)
-        self.remove_process_button.clicked.connect(self.remove_process)
-
-        self.setLayout(main_layout)
-
-        # Сигналы кнопок
-        self.start_button.clicked.connect(self.start_timer_signal.emit)
-        self.pause_button.clicked.connect(self.pause_timer_signal.emit)
-        self.reset_button.clicked.connect(self.reset_timer_signal.emit)
-
-    def set_buttons_enabled(self, running: bool):
-        self.start_button.setEnabled(not running)
-        self.pause_button.setEnabled(running)
-        self.reset_button.setEnabled(running)
+        # Подключение сигналов к кнопкам
+        self.start_button.clicked.connect(self.app.start_timer)
+        self.pause_button.clicked.connect(self.app.pause_timer)
+        self.reset_button.clicked.connect(self.app.reset_timer)
+        self.add_proc_button.clicked.connect(self.add_process)
+        self.remove_proc_button.clicked.connect(self.remove_process)
 
     def start_process_monitoring(self, process_manager):
         self.process_manager = process_manager
         self.update_process_list()
-        from PyQt5.QtCore import QTimer
-        self.process_timer = QTimer(self)
+        self.process_timer = QtCore.QTimer(self)
         self.process_timer.timeout.connect(self.update_process_list)
-        self.process_timer.start(5000)
+        self.process_timer.start(5000)  # Проверка каждые 5 секунд
 
     def update_process_list(self):
-        if self.process_manager is None:
-            return
-        self.apps_list.clear()
-        import psutil
+        if self.process_manager is None: return
         try:
-            monitored = self.process_manager.settings.get("processes", [])
-            running = set()
-            for proc in psutil.process_iter(['name', 'exe']):
-                try:
-                    pname = proc.info['name'].lower() if proc.info.get('name') else ''
-                    ppath = proc.info.get('exe', '').lower() if proc.info.get('exe') else ''
-                    for m in monitored:
-                        if m.lower() in pname or m.lower() in ppath:
-                            running.add(m)
-                except Exception:
-                    continue
-            # --- автотаймер: если есть запущенные игры, включаем прямой отсчет ---
-            if hasattr(self.app, 'timer_manager'):
-                timer = self.app.timer_manager
-                any_game_running = bool(running)
-                if any_game_running:
-                    if not timer.running or timer.mode != 'countup':
-                        timer.start_timer(0, 'countup')
-                        self.autocountup_active = True
-                else:
-                    if timer.running and timer.mode == 'countup':
-                        timer.pause_timer()
-                        self.autocountup_active = False
-            for m in monitored:
-                status = "Запущен" if m in running else "Не запущен"
-                self.apps_list.addItem(f"{m} — {status}")
-            self.update_stats()
+            self.apps_list.clear()
+            monitored_apps = self.process_manager.get_monitored_processes()
+            active_apps = self.process_manager.get_active_processes()
+            for app_name in monitored_apps:
+                status = "запущен" if app_name.lower() in active_apps else "не запущен"
+                item_text = f"{app_name} — {status}"
+                self.apps_list.addItem(item_text)
+            self.app.update_stats()
         except Exception as e:
-            print(f"Ошибка при обновлении списка процессов: {e}")
+            self.logger.error(f"Ошибка при обновлении списка процессов: {e}")
 
-    def get_ui_elements(self):
-        """Возвращает основные UI элементы для использования в других компонентах"""
-        return {
-            'time_display': self.time_display,
-            'start_button': self.start_button,
-            'pause_button': self.pause_button,
-            'reset_button': self.reset_button,
-            'apps_list': self.apps_list,
-            'hours': self.hours,
-            'minutes': self.minutes,
-            'seconds': self.seconds,
-            'mode': self.mode
-        }
-        
-    def update_button_states(self, is_running):
-        """Обновляет состояние кнопок"""
-        if is_running:
-            self.start_button.config(state=tk.DISABLED)
-            self.pause_button.config(state=tk.NORMAL)
-            self.reset_button.config(state=tk.NORMAL)
-        else:
-            self.start_button.config(state=tk.NORMAL)
-            self.pause_button.config(state=tk.DISABLED)
-            self.reset_button.config(state=tk.DISABLED)
-
-    # --- Методы для управления списком процессов ---
     def add_process(self):
-        name = self.process_input.text().strip()
-        if not name or self.process_manager is None:
-            return
-        procs = self.process_manager.settings.get("processes", [])
-        if name not in procs:
-            procs.append(name)
-            self.process_manager.settings.set("processes", procs)
-        self.process_input.clear()
-        self.update_process_list()
+        proc_name, ok = QtWidgets.QInputDialog.getText(self, "Добавить процесс", "Имя процесса (например, 'game.exe'):")
+        if ok and proc_name:
+            self.process_manager.add_process_to_monitor(proc_name)
+            self.update_process_list()
 
     def remove_process(self):
-        items = self.apps_list.selectedItems()
-        if not items or self.process_manager is None:
-            return
-        procs = self.process_manager.settings.get("processes", [])
-        for item in items:
-            pname = item.text().split(" — ")[0]
-            if pname in procs:
-                procs.remove(pname)
-        self.process_manager.settings.set("processes", procs)
+        selected = self.apps_list.currentItem()
+        if not selected: return
+        proc_name = selected.text().split(" — ")[0]
+        self.process_manager.remove_process_from_monitor(proc_name)
         self.update_process_list()
 
-from settings_manager import SettingsManager
-from game_blocker import GameBlocker
-from timer_manager import TimerManager
-from process_manager import ProcessManager
-from hotkey_manager import HotkeyManager
-
-from tray_manager import TrayManager
-from hotkey_manager import HotkeyManager
-from notification_window import NotificationWindow
-from activity_monitor import ActivityMonitor
-from autostart_manager import AutostartManager
-from achievement_manager import AchievementManager
-
 class GameTimerApp(QtWidgets.QMainWindow):
-    def __init__(self):
+    """Основной класс приложения."""
+    def __init__(self, app):
         super().__init__()
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.setWindowTitle("Game Timer")
         self.setMinimumSize(500, 800)
+        self.app = app
         self.settings = SettingsManager()
         self.process_manager = ProcessManager(self.settings)
+        self.sound_manager = SoundManager(self.settings)
         self.gui_manager = GUIManager(self)
         self.setCentralWidget(self.gui_manager)
-        self.gui_manager.start_process_monitoring(self.process_manager)
-
-        # Менеджеры
         self.game_blocker = GameBlocker(self.settings)
-        self.activity_monitor = ActivityMonitor(self.settings)
-        self.achievement_manager = AchievementManager(self.settings)
-        self.notification_window = None
         self.timer_manager = TimerManager(self, self.game_blocker, self.gui_manager, self.settings)
+        self.hotkey_manager = HotkeyManager()
+        self.activity_monitor = ActivityMonitor(self.settings)
+        self.tray_manager = TrayManager(self)
+        self.achievement_manager = AchievementManager(self.settings, notification_callback=self.tray_manager.show_message)
+        self.daily_limit_seconds = self.settings.get('daily_limit_hours', 2) * 3600
 
-        # Подключение сигналов GUI
-        self.gui_manager.start_timer_signal.connect(self.start_timer)
-        self.gui_manager.pause_timer_signal.connect(self.pause_timer)
-        self.gui_manager.reset_timer_signal.connect(self.reset_timer)
-        self.gui_manager.preset_applied_signal.connect(self.apply_preset)
+        # Сброс флага истечения таймера
+        self.game_blocker.update_timer_state(False)
+        # Флаг ручного запуска таймера
+        self.manual_start = False
 
-        # Таймеры для периодических задач
-        self.activity_timer = QtCore.QTimer(self)
-        self.activity_timer.timeout.connect(self.check_activity)
-        self.activity_timer.start(1000)
+        self.setup_connections()
+        self.gui_manager.start_process_monitoring(self.process_manager)
+        self.update_stats()
+        self.check_achievements()
 
-        self.achievement_timer = QtCore.QTimer(self)
-        self.achievement_timer.timeout.connect(self.check_achievements)
-        self.achievement_timer.start(60000)
+        self.periodic_timer = QtCore.QTimer(self)
+        self.periodic_timer.timeout.connect(self.run_periodic_tasks)
+        self.periodic_timer.start(1000)
 
-        # TrayManager — только после инициализации всех окон
-        self.tray_manager = TrayManager(self.show_main_window, self.quit_app)
+    def setup_connections(self):
+        self._init_hotkeys()
+
+    def run_periodic_tasks(self):
+        self.check_activity()
+        self._autocountup_monitor()
+        self.check_achievements()
+
+    def start_timer(self):
+        try:
+            mode_text = self.gui_manager.mode.currentText()
+            mode = 'countdown' if 'Обратный' in mode_text else 'countup'
+            if mode == 'countdown':
+                h = int(self.gui_manager.hours.text() or 0)
+                m = int(self.gui_manager.minutes.text() or 0)
+                s = int(self.gui_manager.seconds.text() or 0)
+                self.timer_manager.start_timer(h * 3600 + m * 60 + s, mode)
+            else:
+                self.timer_manager.start_timer(0, mode)
+            # Установка флага ручного запуска
+            # Сброс показать-один-раз уведомления и таймера проверки, если были
+            if hasattr(self, 'post_notification_timer'):
+                self.post_notification_timer.stop()
+            if hasattr(self, 'notification_shown'):
+                del self.notification_shown
+            self.manual_start = True
+        except Exception as e:
+            self.logger.error(f"Ошибка при запуске таймера: {e}")
+
+    def pause_timer(self): self.timer_manager.pause_timer()
+    def reset_timer(self): 
+        self.timer_manager.reset_timer()
+        # Сброс флага истечения таймера
+        self.game_blocker.update_timer_state(False)
+        # Сброс флага ручного запуска
+        self.manual_start = False
+        # Остановка таймера проверки после уведомления и сброс метки показа уведомления
+        if hasattr(self, 'post_notification_timer'):
+            self.post_notification_timer.stop()
+        if hasattr(self, 'notification_shown'):
+            del self.notification_shown
+
+    def check_activity(self):
+        """Проверяет активность пользователя и при необходимости ставит таймер на паузу."""
+        try:
+            is_active, _ = self.activity_monitor.check_activity()
+            if not is_active and self.timer_manager.is_running():
+                self.timer_manager.pause_timer()
+                self.logger.info("Таймер поставлен на паузу из-за неактивности пользователя.")
+        except Exception as e:
+            self.logger.error(f"Ошибка при проверке активности: {e}")
+
+    def start_timer_from_ui(self):
+        """Запускает таймер с параметрами, установленными в UI."""
+        try:
+            mode_text = self.gui_manager.mode.currentText()
+            mode = 'countdown' if 'Обратный' in mode_text else 'countup'
+            if mode == 'countdown':
+                h = int(self.gui_manager.hours.text() or 0)
+                m = int(self.gui_manager.minutes.text() or 0)
+                s = int(self.gui_manager.seconds.text() or 0)
+                self.timer_manager.start_timer(h * 3600 + m * 60 + s, mode)
+                self.logger.info(f"Игра запущена, таймер запущен в режиме countdown на {h:02d}:{m:02d}:{s:02d}.")
+            else:
+                self.timer_manager.start_timer(0, mode)
+                self.logger.info("Игра запущена, таймер запущен в режиме countup.")
+        except Exception as e:
+            self.logger.error(f"Ошибка при запуске таймера из UI: {e}")
+
+    def _autocountup_monitor(self):
+        """Мониторинг процессов для авто-таймера"""
+        any_game_running = self.process_manager.is_any_monitored_process_running()
+        timer_running = self.timer_manager.is_running()
+        is_countup = self.timer_manager.get_mode() == 'countup'
+        
+        # Проверяем, не истек ли таймер
+        timer_expired = self.timer_manager.is_expired()
+        
+        # Если таймер истек, но игра все еще запущена, показываем уведомление
+        if any_game_running and timer_expired and not hasattr(self, 'notification_shown'):
+            # Показываем приятное уведомление
+            self.notification_window = NotificationWindow(
+                message="Время истекло!\nТы молодец, пора сделать перерыв.",
+                on_close_callback=self._on_notification_closed
+            )
+            self.notification_window.show()
+            self.notification_shown = True
+            
+            # Запускаем таймер на 10 секунд для проверки завершения игры
+            self.post_notification_timer = QtCore.QTimer(self)
+            self.post_notification_timer.timeout.connect(self._check_game_after_notification)
+            self.post_notification_timer.start(10000)
+        elif not any_game_running and timer_running and is_countup:
+            self.timer_manager.pause_timer()
+            self.logger.info("Все игры закрыты, авто-таймер на паузе.")
+
+    def _on_notification_closed(self):
+        """Callback when notification window is closed by user"""
+        self.logger.info("Notification window closed by user")
+        # Останавливаем таймер проверки игры
+        if hasattr(self, 'post_notification_timer'):
+            self.post_notification_timer.stop()
+        # Запускаем таймер на 10 секунд для проверки завершения игры
+        self.post_notification_timer = QtCore.QTimer(self)
+        self.post_notification_timer.timeout.connect(self._check_game_after_notification)
+        self.post_notification_timer.start(10000)
+
+    def _check_game_after_notification(self):
+        """Проверяет, завершена ли игра через 10 секунд после уведомления"""
+        # Останавливаем таймер
+        self.post_notification_timer.stop()
+        
+        # Проверяем, запущена ли игра
+        if self.process_manager.is_any_monitored_process_running():
+            # Показываем предупреждение и включаем блокировку
+            self.logger.warning("Игра не завершена в течение 10 секунд после уведомления.")
+            self.game_blocker.update_timer_state(True)
+            self.game_blocker.start_blocking_sequence()
+        else:
+            self.logger.info("Игра завершена в течение 10 секунд после уведомления.")
+
+    def check_achievements(self):
+        """Проверяет ежедневные достижения при запуске."""
+        self.achievement_manager.on_daily_check()
+
+    def update_stats(self):
+        try:
+            today = self.process_manager.get_daily_usage()
+            week = self.process_manager.get_weekly_usage()
+            left = max(0, self.daily_limit_seconds - today)
+            self.gui_manager.stats_today.setText(f"Сегодня: {today//3600:02d}:{(today%3600)//60:02d}:{today%60:02d}")
+            self.gui_manager.stats_left.setText(f"Осталось: {left//3600:02d}:{(left%3600)//60:02d}:{left%60:02d}")
+            self.gui_manager.stats_week.setText(f"За неделю: {week//3600:02d}:{(week%3600)//60:02d}:{week%60:02d}")
+        except Exception as e:
+            self.logger.error(f"Ошибка обновления статистики: {e}")
+
+    def _init_hotkeys(self):
+        self.hotkey_manager.register_limit_hotkeys(self.increase_daily_limit, self.decrease_daily_limit)
+        self.hotkey_manager.register_blocker_hotkey(self.game_blocker.unblock)
+
+    def increase_daily_limit(self): self.daily_limit_seconds += 600; self.update_stats()
+    def decrease_daily_limit(self): self.daily_limit_seconds = max(0, self.daily_limit_seconds - 600); self.update_stats()
 
     def show_main_window(self):
+        """Показывает главное окно приложения."""
         self.showNormal()
+        self.raise_()
         self.activateWindow()
 
     def quit_app(self):
-        QtWidgets.QApplication.quit()
+        """Корректно завершает работу приложения."""
+        self.tray_manager.tray_icon.hide()
+        self.app.quit()
 
-    def closeEvent(self, event):
-        # Скрываем окно, приложение остаётся жить в трее
-        event.ignore()
-        self.hide()
-
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Game Timer")
-        self.setMinimumSize(500, 800)
-        self.settings = SettingsManager()
-        self.process_manager = ProcessManager(self.settings)
-        self.gui_manager = GUIManager(self)
-        self.setCentralWidget(self.gui_manager)
-        self.gui_manager.start_process_monitoring(self.process_manager)
-
-        # Менеджеры
-        self.game_blocker = GameBlocker(self.settings)
-        self.activity_monitor = ActivityMonitor(self.settings)
-        self.achievement_manager = AchievementManager(self.settings)
-        self.notification_window = None
-        self.timer_manager = TimerManager(self, self.game_blocker, self.gui_manager, self.settings)
-
-        # Подключение сигналов GUI
-        self.gui_manager.start_timer_signal.connect(self.start_timer)
-        self.gui_manager.pause_timer_signal.connect(self.pause_timer)
-        self.gui_manager.reset_timer_signal.connect(self.reset_timer)
-        self.gui_manager.preset_applied_signal.connect(self.apply_preset)
-
-        # Таймеры для периодических задач
-        self.activity_timer = QtCore.QTimer(self)
-        self.activity_timer.timeout.connect(self.check_activity)
-        self.activity_timer.start(1000)
-
-        self.achievement_timer = QtCore.QTimer(self)
-        self.achievement_timer.timeout.connect(self.check_achievements)
-        self.achievement_timer.start(60000)
-
-    def start_timer(self):
-        hours = int(self.gui_manager.hours.text() or 0)
-        minutes = int(self.gui_manager.minutes.text() or 0)
-        seconds = int(self.gui_manager.seconds.text() or 0)
-        total_seconds = hours * 3600 + minutes * 60 + seconds
-        mode = self.gui_manager.mode.currentText()
-        if total_seconds > 0 or mode == "Прямой отсчет":
-            self.timer_manager.start_timer(total_seconds, mode)
-            self.gui_manager.set_buttons_enabled(True)
-            self.achievement_manager.on_timer_start()
-
-    def pause_timer(self):
-        self.timer_manager.pause_timer()
-        self.gui_manager.set_buttons_enabled(False)
-
-    def reset_timer(self):
-        self.timer_manager.reset_timer()
-        self.gui_manager.set_buttons_enabled(False)
+    def closeEvent(self, event): self.hide(); event.ignore()
 
     def apply_preset(self, hours, minutes, seconds):
         self.gui_manager.hours.setText(str(hours))
         self.gui_manager.minutes.setText(str(minutes))
         self.gui_manager.seconds.setText(str(seconds))
 
-    def show_notification(self, title="Уведомление", message=""):
-        if not self.notification_window:
-            self.notification_window = NotificationWindow(title, message)
-        else:
-            self.notification_window.update_message(message)
-        self.notification_window.show()
-        self.achievement_manager.on_notification_shown()
-
-    def check_activity(self):
-        if self.timer_manager.is_running():
-            is_active = self.activity_monitor.check_activity()
-            if not is_active and not self.timer_manager.is_paused():
-                self.pause_timer()
-                self.show_notification("Таймер на паузе", "Нет активности пользователя")
-
-    def check_achievements(self):
-        self.achievement_manager.check_time_achievements()
-        self.achievement_manager.on_daily_check()
-        if self.timer_manager.is_running():
-            elapsed = self.timer_manager.get_elapsed_time()
-            self.achievement_manager.on_timer_tick(elapsed)
-
-    # --- Автоматический контроль лимита для прямого отсчета ---
-    def _autocountup_monitor(self):
-        timer = self.timer_manager
-        # --- Проверяем дневной лимит ---
-        pm = self.process_manager
-        if pm is not None:
-            today_used = pm.get_daily_usage()
-            left = max(0, self.daily_limit_seconds - today_used)
-            self.autocountup_limit = self.daily_limit_seconds
-            # Обновляем статистику
-            self.update_stats()
-            # Если лимит исчерпан — блокировка
-            if today_used >= self.daily_limit_seconds:
-                self.show_notification("Дневной лимит!", f"Сегодня вы уже сыграли {today_used//3600:02}:{(today_used%3600)//60:02}:{today_used%60:02}. Пора сделать перерыв!")
-                self.game_blocker.start_blocking_sequence()
-                if timer.running and timer.mode == 'countup':
-                    timer.pause_timer()
-        # --- Сессионный лимит (для совместимости) ---
-        if timer.running and timer.mode == 'countup':
-            elapsed = timer.get_elapsed_time()
-            limit = self.autocountup_limit
-            if elapsed >= limit:
-                # Показываем уведомление и блокируем
-                self.show_notification("Лимит времени!", f"Вы играете уже {elapsed//3600:02}:{(elapsed%3600)//60:02}:{elapsed%60:02}. Пора сделать перерыв!")
-                self.game_blocker.start_blocking_sequence()
-                timer.pause_timer()
-
-    def closeEvent(self, event):
-        # Здесь можно добавить логику для сохранения состояния или подтверждения выхода
-        event.accept()
-
-    # --- Методы для статистики и лимитов ---
-    def update_stats(self):
-        pm = self.process_manager
-        if pm is None:
-            return
-        today = pm.get_daily_usage()
-        week = pm.get_weekly_usage()
-        left = max(0, self.daily_limit_seconds - today)
-        self.gui_manager.stats_today.setText(f"Сегодня сыграно: {today//3600:02}:{(today%3600)//60:02}:{today%60:02}")
-        self.gui_manager.stats_left.setText(f"Осталось: {left//3600:02}:{(left%3600)//60:02}:{left%60:02}")
-        self.gui_manager.stats_week.setText(f"За неделю: {week//3600:02}:{(week%3600)//60:02}:{week%60:02}")
-
-    def _init_hotkeys(self):
-        self.hotkey_manager = HotkeyManager()
-        self.hotkey_manager.register_limit_hotkeys(self.increase_daily_limit, self.decrease_daily_limit)
-        self.hotkey_manager.register_blocker_hotkey(self.unblock_block_screen)
-
-    def increase_daily_limit(self):
-        self.daily_limit_seconds += 10 * 60  # +10 минут
-        self.update_stats()
-
-    def decrease_daily_limit(self):
-        self.daily_limit_seconds = max(0, self.daily_limit_seconds - 10 * 60)
-        self.update_stats()
-
-    def unblock_block_screen(self):
-        """Быстрое снятие блокировки по горячей клавише (Ctrl+Alt+B)"""
-        # Найти и закрыть активное окно BlockScreen (если есть)
-        if hasattr(self.app, 'game_blocker') and hasattr(self.app.game_blocker, 'block_screen'):
-            block_screen = self.app.game_blocker.block_screen
-            if block_screen and block_screen.isVisible():
-                block_screen.accept()  # Снимет блокировку
-
 if __name__ == "__main__":
-    import sys
     app = QtWidgets.QApplication(sys.argv)
-    window = GameTimerApp()
+    if not QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
+        QtWidgets.QMessageBox.critical(None, "Критическая ошибка", "Системный трей не поддерживается.")
+        sys.exit(1)
+    app.setQuitOnLastWindowClosed(False)
+    window = GameTimerApp(app)
     window.show()
     sys.exit(app.exec_())
-        
-    def hide_window(self):
-        """Скрывает главное окно"""
-        self.root.withdraw()
-        
-    def quit_app(self):
-        """Закрывает приложение"""
-        if hasattr(self, 'hotkey_manager'):
-            self.hotkey_manager.stop()
-        if hasattr(self, 'tray_manager'):
-            self.tray_manager.stop()
-        if hasattr(self, 'game_blocker'):
-            self.game_blocker.stop()
-        self.root.quit()
-        
-    def on_closing(self):
-        """Обработчик закрытия приложения"""
-        self.hide_window()  # Скрываем окно вместо закрытия
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = GameTimerApp(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
-    root.mainloop()

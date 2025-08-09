@@ -6,6 +6,7 @@
 
 import json
 import os
+import time
 from logger import Logger
 
 class SettingsManager:
@@ -13,6 +14,10 @@ class SettingsManager:
         self.filename = filename
         self.settings = {}
         self.logger = Logger("SettingsManager")
+        # Вспомогательные поля для троттлинга сохранений
+        self._last_save_ts = 0.0
+        self._save_interval_sec = 5.0  # не чаще одного сохранения в 5 секунд
+        self._last_saved_snapshot = None
         self.default_settings = {
             "mode": "timer",
             "hours": 2,
@@ -60,9 +65,19 @@ class SettingsManager:
         try:
             # Преобразуем объекты типа set в list перед сохранением
             settings_to_save = self._convert_sets_to_lists(self.settings)
+            # Избегаем лишних записей, если ничего не изменилось
+            current_snapshot = json.dumps(settings_to_save, sort_keys=True, ensure_ascii=False)
+            if self._last_saved_snapshot == current_snapshot:
+                return
+            # Троттлинг частых сохранений
+            now = time.time()
+            if (now - self._last_save_ts) < self._save_interval_sec:
+                return
             with open(self.filename, 'w', encoding='utf-8') as f:
                 json.dump(settings_to_save, f, indent=4, ensure_ascii=False)
-            self.logger.info("Settings saved successfully")
+            self._last_saved_snapshot = current_snapshot
+            self._last_save_ts = now
+            self.logger.debug("Settings saved successfully")
         except Exception as e:
             self.logger.error(f"Error saving settings: {e}")
 

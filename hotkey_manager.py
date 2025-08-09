@@ -49,13 +49,6 @@ class HotkeyManager:
             self.logger.info("Registered blocker hotkey: Ctrl+Alt+B")
         except Exception as e:
             self.logger.error(f"Failed to register blocker hotkey: {str(e)}")
-
-            if hotkey in self.hotkeys:
-                keyboard.remove_hotkey(hotkey)
-                del self.hotkeys[hotkey]
-                self.logger.info(f"Removed hotkey: {hotkey}")
-        except Exception as e:
-            self.logger.error(f"Failed to remove hotkey {hotkey}: {str(e)}")
             
     def stop(self):
         """Останавливает все горячие клавиши"""

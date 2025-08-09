@@ -7,7 +7,6 @@
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 import sys
-from countdown_window import CountdownWindow
 from settings_manager import SettingsManager
 
 class BlockScreen(QtWidgets.QDialog):
@@ -26,28 +25,6 @@ class BlockScreen(QtWidgets.QDialog):
         label.setAlignment(QtCore.Qt.AlignCenter)
         layout.addWidget(label)
 
-        # Запуск CountdownWindow перед показом блокировки
-        self.countdown = CountdownWindow(countdown_seconds)
-        self.countdown.exec_()
-        # После отсчета показываем блокировку
-        self.showFullScreen()
-
-    def keyPressEvent(self, event):
-        # Разблокировка по Ctrl+Alt+Q
-        if event.key() == QtCore.Qt.Key_Q and \
-           event.modifiers() & QtCore.Qt.ControlModifier and \
-           event.modifiers() & QtCore.Qt.AltModifier:
-            self.accept()  # Закроет окно блокировки
-        else:
-            super().keyPressEvent(event)
-
     def closeEvent(self, event):
         # Блокируем закрытие окна
         event.ignore()
-
-    def close(self):
-        """Закрывает окно блокировки"""
-        try:
-            self.destroy()
-        except:
-            pass
