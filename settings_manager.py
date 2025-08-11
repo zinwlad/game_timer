@@ -24,8 +24,8 @@ class SettingsManager:
             "minutes": 0,
             "processes": ["game.exe", "minecraft.exe", "CorelDRW.exe"],
             "presets": {
-                "10 сек": {"hours": 0, "minutes": 0, "seconds": 10},
-                "30 минут": {"hours": 0, "minutes": 30},
+                "6 минут": {"hours": 0, "minutes": 6, "seconds": 0},
+                "10 минут": {"hours": 0, "minutes": 10},
                 "1 час": {"hours": 1, "minutes": 0},
                 "2 часа": {"hours": 2, "minutes": 0}
             },

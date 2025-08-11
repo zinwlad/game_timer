@@ -21,6 +21,7 @@ from activity_monitor import ActivityMonitor
 from achievement_manager import AchievementManager
 from sound_manager import SoundManager
 from tray_manager import TrayManager
+from corner_toast import CornerToast
 
 # --- Single instance helper (Windows named mutex) ---
 def _acquire_single_instance_mutex():
@@ -315,6 +316,8 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self.timestamp = time.time()
         # Оверлей обратного отсчета (не мешает кликам)
         self.countdown_overlay = CountdownOverlay()
+        # Плашка предварительного предупреждения об окончании времени
+        self.pre_expiry_toast = CornerToast()
 
         # Сброс флага истечения таймера
         self.game_blocker.update_timer_state(False)
@@ -351,6 +354,11 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self._expire_grace_used = False
         # Ожидается отложенный показ диалога авто-старта
         self._auto_prompt_pending = False
+        # Повторные автоспосы: счётчик попыток
+        self._auto_prompt_retries = 0
+        # Текущее окно авто-спроса
+        self._auto_prompt_box = None
+        self._auto_prompt_open = False
 
     def setup_connections(self):
         self._init_hotkeys()
@@ -420,18 +428,21 @@ class GameTimerApp(QtWidgets.QMainWindow):
                 if not in_rest and any_game and not timer_running:
                     # Запланировать отложенный показ, если ещё не запланирован
                     if not self._auto_prompt_pending:
-                        delay_sec = int(self.settings.get('auto_prompt_initial_delay_sec', 10) or 10)
+                        delay_sec = int(self.settings.get('auto_prompt_initial_delay_sec', 20) or 20)
                         self._auto_prompt_pending = True
                         QtCore.QTimer.singleShot(max(0, delay_sec) * 1000, self._auto_prompt_after_delay)
                 else:
                     # Условие не выполняется — сбросим ожидание
                     self._auto_prompt_pending = False
+                    self._auto_prompt_retries = 0
         except Exception:
             pass
 
         # 6) Обычный мониторинг авто-таймера и достижения
         self._autocountup_monitor()
         self.check_achievements()
+        # 7) Обновление плашки обратного отсчета до конца
+        self._update_pre_expiry_toast()
 
     def start_timer(self):
         try:
@@ -467,15 +478,194 @@ class GameTimerApp(QtWidgets.QMainWindow):
             self._auto_prompt_pending = False
             # Повторная проверка условий
             if self.is_in_rest():
+                self._auto_prompt_retries = 0
                 return
             if not self.settings.get('auto_start_on_game_detect', True):
+                self._auto_prompt_retries = 0
                 return
             if not self.process_manager.is_any_monitored_process_running():
+                self._auto_prompt_retries = 0
                 return
             if self.timer_manager.is_running():
+                self._auto_prompt_retries = 0
                 return
             self._maybe_prompt_auto_start()
         except Exception:
+            pass
+
+    def _maybe_prompt_auto_start(self):
+        """Показывает неблокирующее окно 'Начать таймер?' с повторами и таймаутом.
+        Улучшено для детского UX: крупные кнопки, эмодзи, центрирование, логирование путей закрытия.
+        Есть защита от флапа условий в первые 3 секунды.
+        """
+        try:
+            now = time.time()
+            if now < self._next_auto_prompt_ts:
+                return
+            # Если окно уже открыто — поднимем и выйдем
+            if self._auto_prompt_open and self._auto_prompt_box and self._auto_prompt_box.isVisible():
+                try:
+                    self._auto_prompt_box.raise_()
+                    self._auto_prompt_box.activateWindow()
+                except Exception:
+                    pass
+                return
+
+            text = self.settings.get('auto_prompt_text', 'Обнаружена игра. Начать таймер?')
+            timeout_sec = int(self.settings.get('auto_prompt_dialog_timeout_sec', 8) or 8)
+            timeout_sec = max(3, timeout_sec)  # Минимум 3 секунды показа
+            retry_sec = int(self.settings.get('auto_prompt_retry_seconds', 30) or 30)
+            max_retries = int(self.settings.get('auto_prompt_max_retries', 3) or 3)
+            snooze_min = int(self.settings.get('auto_prompt_snooze_minutes', 5) or 5)
+
+            box = QtWidgets.QMessageBox(self)
+            self._auto_prompt_box = box
+            self._auto_prompt_open = True
+            box.setWindowTitle('⏱️ Таймер')
+            box.setText(f"🎮 {text}")
+            box.setIcon(QtWidgets.QMessageBox.Question)
+            box.setStandardButtons(QtWidgets.QMessageBox.NoButton)
+            yes_btn = box.addButton(QtWidgets.QMessageBox.Yes)
+            no_btn = box.addButton(QtWidgets.QMessageBox.No)
+            try:
+                yes_btn.setText('Да, начать! 🚀')
+                no_btn.setText('Нет, позже')
+            except Exception:
+                pass
+            box.setDefaultButton(yes_btn)
+            box.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+            box.setWindowModality(QtCore.Qt.NonModal)
+            # Крупный шрифт и удобные кнопки
+            try:
+                box.setStyleSheet(
+                    "QLabel{font-size:18px;} "
+                    "QPushButton{font-size:18px; padding:8px 16px;}"
+                )
+            except Exception:
+                pass
+
+            shown_at = time.time()
+            self.logger.info("Auto-prompt: show dialog (retries=%s)" % self._auto_prompt_retries)
+
+            def on_yes():
+                try:
+                    mode = str(self.settings.get('auto_start_mode', 'countup') or 'countup')
+                    if mode == 'countdown':
+                        secs = int(self.settings.get('auto_countdown_seconds', 3600) or 3600)
+                        secs = max(0, secs)
+                        self.timer_manager.start_timer(secs, 'countdown')
+                    else:
+                        self.timer_manager.start_timer(0, 'countup')
+                    self.manual_start = True
+                    self._expire_grace_used = False
+                    self._auto_prompt_retries = 0
+                    self.logger.info("Auto-prompt: clicked YES -> timer started")
+                finally:
+                    self._auto_prompt_open = False
+                    self._auto_prompt_box = None
+                    box.close()
+
+            def on_no():
+                try:
+                    if self._auto_prompt_retries < max_retries:
+                        self._auto_prompt_retries += 1
+                        self._auto_prompt_pending = True
+                        self.logger.info("Auto-prompt: clicked NO -> schedule retry in %ss" % retry_sec)
+                        QtCore.QTimer.singleShot(max(0, retry_sec) * 1000, self._auto_prompt_after_delay)
+                    else:
+                        self.logger.info("Auto-prompt: clicked NO -> snooze %s min" % snooze_min)
+                        self._next_auto_prompt_ts = time.time() + snooze_min * 60
+                finally:
+                    self._auto_prompt_open = False
+                    self._auto_prompt_box = None
+                    box.close()
+
+            yes_btn.clicked.connect(on_yes)
+            no_btn.clicked.connect(on_no)
+            box.show()
+            box.raise_()
+            box.activateWindow()
+            # Центрирование диалога по экрану
+            try:
+                screen = QtWidgets.QApplication.primaryScreen()
+                if screen:
+                    geo = screen.availableGeometry()
+                    bx = box.frameGeometry()
+                    bx.moveCenter(geo.center())
+                    box.move(bx.topLeft())
+            except Exception:
+                pass
+
+            # Таймаут авто-повтора при отсутствии ответа
+            def on_timeout():
+                try:
+                    if not self._auto_prompt_open or not box.isVisible():
+                        return
+                    # Проверим актуальность условий (с защитой от флапа первые 3с)
+                    if (time.time() - shown_at) >= 3:
+                        if self.is_in_rest():
+                            self.logger.info("Auto-prompt timeout: conditions invalidated -> rest active")
+                            self._auto_prompt_retries = 0
+                            return
+                        if not self.process_manager.is_any_monitored_process_running():
+                            self.logger.info("Auto-prompt timeout: conditions invalidated -> game closed")
+                            self._auto_prompt_retries = 0
+                            return
+                        if self.timer_manager.is_running():
+                            self.logger.info("Auto-prompt timeout: conditions invalidated -> timer already running")
+                            self._auto_prompt_retries = 0
+                            return
+                    if self._auto_prompt_retries < max_retries:
+                        self._auto_prompt_retries += 1
+                        self._auto_prompt_open = False
+                        self._auto_prompt_box = None
+                        box.close()
+                        self._auto_prompt_pending = True
+                        self.logger.info("Auto-prompt timeout: schedule retry in %ss (retry #%s)" % (retry_sec, self._auto_prompt_retries))
+                        QtCore.QTimer.singleShot(max(0, retry_sec) * 1000, self._auto_prompt_after_delay)
+                    else:
+                        self._auto_prompt_open = False
+                        self._auto_prompt_box = None
+                        box.close()
+                        self.logger.info("Auto-prompt timeout: snooze %s min" % snooze_min)
+                        self._next_auto_prompt_ts = time.time() + snooze_min * 60
+                except Exception:
+                    pass
+
+            QtCore.QTimer.singleShot(max(1, timeout_sec) * 1000, on_timeout)
+        except Exception as e:
+            self.logger.error(f"Ошибка авто-приглашения к запуску таймера: {e}")
+
+    def _format_mmss(self, total_seconds: int) -> str:
+        total_seconds = max(0, int(total_seconds))
+        m = total_seconds // 60
+        s = total_seconds % 60
+        return f"{m:02d}:{s:02d}"
+
+    def _update_pre_expiry_toast(self):
+        """Показывает/скрывает плашку внизу справа, когда до конца осталось <= порога."""
+        try:
+            if self.is_in_rest():
+                self.pre_expiry_toast.hide_toast()
+                return
+            if not self.timer_manager.is_running():
+                self.pre_expiry_toast.hide_toast()
+                return
+            if self.timer_manager.get_mode() != 'countdown':
+                self.pre_expiry_toast.hide_toast()
+                return
+            remaining = int(getattr(self.timer_manager, 'remaining_time', 0) or 0)
+            if remaining <= 0 or self.timer_manager.is_expired():
+                self.pre_expiry_toast.hide_toast()
+                return
+            threshold = int(self.settings.get('pre_expiry_toast_seconds', 300) or 300)
+            if remaining <= threshold:
+                text = f"Скоро закончится время: {self._format_mmss(remaining)}"
+                self.pre_expiry_toast.show_text(text)
+            else:
+                self.pre_expiry_toast.hide_toast()
+        except Exception:
+            # Не мешаем основному циклу
             pass
 
     def pause_timer(self): self.timer_manager.pause_timer()

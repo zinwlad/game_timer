@@ -8,9 +8,14 @@
         "CorelDRW.exe"
     ],
     "presets": {
-        "30 минут": {
+        "6 сек": {
             "hours": 0,
-            "minutes": 30
+            "minutes": 0,
+            "seconds": 6
+        },
+        "10 минут": {
+            "hours": 0,
+            "minutes": 10
         },
         "1 час": {
             "hours": 1,
