@@ -43,97 +43,16 @@
         "daily_duration": 0,
         "consecutive_days": 1,
         "hotkeys_used": [],
-        "notifications_received": 5,
-        "breaks_taken": 1,
+        "notifications_received": 0,
+        "breaks_taken": 0,
         "last_active_date": "2025-08-11",
         "day_date": "2025-08-11",
-        "had_forced_block_today": true,
-        "attempts_during_rest_today": 16,
+        "had_forced_block_today": false,
+        "attempts_during_rest_today": 0,
         "limit_exceeded_today": false,
         "within_limit_streak": 0,
         "clean_streak": 0
     },
-    "achievements": {
-        "first_timer": {
-            "progress": 1,
-            "completed": true,
-            "completed_date": "2025-04-19T22:01:48.042253"
-        },
-        "time_master": {
-            "progress": 10,
-            "completed": true,
-            "completed_date": "2025-04-19T22:48:57.858918"
-        },
-        "hour_warrior": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "marathon_runner": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "daily_hero": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "weekly_master": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "night_owl": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "early_bird": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "hotkey_master": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "notification_lover": {
-            "progress": 9,
-            "completed": false,
-            "completed_date": null
-        },
-        "discipline_master": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "break_champion": {
-            "progress": 1,
-            "completed": false,
-            "completed_date": null
-        },
-        "no_violations_today": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "within_daily_limit": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "no_exceed_week": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        },
-        "super_week": {
-            "progress": 0,
-            "completed": false,
-            "completed_date": null
-        }
-    },
-    "rest_until": "2025-08-11T23:17:28.801870"
+    "achievements": {},
+    "rest_until": ""
 }

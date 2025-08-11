@@ -2,6 +2,7 @@
 Главный модуль приложения Game Timer.
 """
 import sys
+import os
 import logging
 import ctypes
 import time
@@ -348,9 +349,19 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self._next_auto_prompt_ts = 0.0
         # Флаг: уже был показан один раз «грайс» после истечения таймера
         self._expire_grace_used = False
+        # Ожидается отложенный показ диалога авто-старта
+        self._auto_prompt_pending = False
 
     def setup_connections(self):
         self._init_hotkeys()
+        # Хоткей для полного сброса данных (только для тестирования)
+        try:
+            # ВАЖНО: keyboard вызывает коллбеки в фоновой нити.
+            # Все UI-операции перенаправляем в главный поток через singleShot.
+            self.hotkey_manager.add_hotkey('ctrl+alt+shift+r', lambda: QtCore.QTimer.singleShot(0, self.reset_all_data))
+            self.logger.info("Registered reset-all hotkey: Ctrl+Alt+Shift+R")
+        except Exception as e:
+            self.logger.error(f"Не удалось зарегистрировать хоткей сброса: {e}")
 
     def run_periodic_tasks(self):
         # 1) Проверка активности
@@ -403,11 +414,18 @@ class GameTimerApp(QtWidgets.QMainWindow):
             pass
         # 5) При обнаружении игры — предложить запустить таймер (если не идёт и нет перерыва)
         try:
-            if not in_rest and self.settings.get('auto_start_on_game_detect', True):
+            if self.settings.get('auto_start_on_game_detect', True):
                 any_game = self.process_manager.is_any_monitored_process_running()
                 timer_running = self.timer_manager.is_running()
-                if any_game and not timer_running:
-                    self._maybe_prompt_auto_start()
+                if not in_rest and any_game and not timer_running:
+                    # Запланировать отложенный показ, если ещё не запланирован
+                    if not self._auto_prompt_pending:
+                        delay_sec = int(self.settings.get('auto_prompt_initial_delay_sec', 10) or 10)
+                        self._auto_prompt_pending = True
+                        QtCore.QTimer.singleShot(max(0, delay_sec) * 1000, self._auto_prompt_after_delay)
+                else:
+                    # Условие не выполняется — сбросим ожидание
+                    self._auto_prompt_pending = False
         except Exception:
             pass
 
@@ -440,7 +458,25 @@ class GameTimerApp(QtWidgets.QMainWindow):
             # Новый запуск таймера — сбрасываем флаг грайса
             self._expire_grace_used = False
         except Exception as e:
-            self.logger.error(f"Ошибка при запуске таймера: {e}")
+            self.logger.error(f"Ошибка авто-приглашения к запуску таймера: {e}")
+
+    def _auto_prompt_after_delay(self):
+        """Отложенный показ окна авто-старта: проверяет условия повторно и вызывает диалог."""
+        try:
+            # Сброс pending независимо от результата, чтобы можно было планировать далее
+            self._auto_prompt_pending = False
+            # Повторная проверка условий
+            if self.is_in_rest():
+                return
+            if not self.settings.get('auto_start_on_game_detect', True):
+                return
+            if not self.process_manager.is_any_monitored_process_running():
+                return
+            if self.timer_manager.is_running():
+                return
+            self._maybe_prompt_auto_start()
+        except Exception:
+            pass
 
     def pause_timer(self): self.timer_manager.pause_timer()
     def reset_timer(self): 
@@ -456,6 +492,77 @@ class GameTimerApp(QtWidgets.QMainWindow):
             self.post_notification_timer.stop()
         if hasattr(self, 'notification_shown'):
             del self.notification_shown
+
+    def reset_all_data(self):
+        """Полный сброс статистики и пользовательских данных (для тестирования)."""
+        try:
+            # Подтверждение
+            box = QtWidgets.QMessageBox(self)
+            box.setIcon(QtWidgets.QMessageBox.Warning)
+            box.setWindowTitle('Сброс данных')
+            box.setText('Сбросить статистику, достижения и таймер? Это действие нельзя отменить.')
+            box.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            box.setDefaultButton(QtWidgets.QMessageBox.No)
+            box.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+            box.setWindowModality(QtCore.Qt.ApplicationModal)
+            box.activateWindow(); box.raise_()
+            if box.exec_() != QtWidgets.QMessageBox.Yes:
+                return
+
+            # 1) Остановить и сбросить таймер/флаги
+            try:
+                self.timer_manager.pause_timer()
+            except Exception:
+                pass
+            self.reset_timer()
+            self._next_auto_prompt_ts = 0.0
+            self._expire_grace_used = False
+            self.rest_reason = None
+
+            # 2) Снять перерыв и очистить в настройках
+            self.rest_until = None
+            try:
+                self.settings.set('rest_until', '')
+            except Exception:
+                pass
+
+            # 3) Удалить БД статистики использования
+            try:
+                db_path = getattr(self.process_manager, '_usage_db', 'usage_stats.db')
+                if db_path and os.path.exists(db_path):
+                    os.remove(db_path)
+                # Переинициализировать БД
+                self.process_manager._init_db()
+            except Exception as e:
+                self.logger.error(f"Ошибка удаления БД статистики: {e}")
+
+            # 4) Сбросить достижения и их статистику
+            try:
+                self.settings.set('achievements', {})
+                self.settings.set('achievement_stats', {})
+                self.settings.save()
+                # Переинициализировать менеджер достижений
+                self.achievement_manager = AchievementManager(self.settings, notification_callback=self.tray_manager.show_message)
+            except Exception as e:
+                self.logger.error(f"Ошибка сброса достижений: {e}")
+
+            # 5) Обновить UI
+            try:
+                self.gui_manager.set_rest_info("", False)
+                self.update_stats()
+                self.check_achievements()
+            except Exception:
+                pass
+
+            # 6) Сообщение пользователю
+            try:
+                self.tray_manager.show_message('Сброс', 'Статистика и данные сброшены')
+            except Exception:
+                pass
+
+            self.logger.info("Выполнен полный сброс статистики и данных")
+        except Exception as e:
+            self.logger.error(f"Ошибка полного сброса данных: {e}")
 
     def check_activity(self):
         """Проверяет активность пользователя и при необходимости ставит таймер на паузу."""
