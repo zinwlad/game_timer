@@ -483,9 +483,24 @@ class GameTimerApp(QtWidgets.QMainWindow):
             if not self.settings.get('auto_start_on_game_detect', True):
                 self._auto_prompt_retries = 0
                 return
+            # Дебаунс: если игра "мигнула" и пропала < 2 сек, повторы не сбрасываем
             if not self.process_manager.is_any_monitored_process_running():
+                now_ts = time.time()
+                since = getattr(self, '_auto_prompt_game_not_running_since', None)
+                if since is None:
+                    self._auto_prompt_game_not_running_since = now_ts
+                    return
+                if (now_ts - since) < 2.0:
+                    # Меньше 2 сек отсутствия — считаем флапом, не сбрасываем повторы
+                    return
+                # Долго нет игры — сбрасываем повторы и таймер отметки
                 self._auto_prompt_retries = 0
+                self._auto_prompt_game_not_running_since = None
                 return
+            else:
+                # Игра снова есть — сбрасываем отметку отсутствия
+                if hasattr(self, '_auto_prompt_game_not_running_since'):
+                    self._auto_prompt_game_not_running_since = None
             if self.timer_manager.is_running():
                 self._auto_prompt_retries = 0
                 return
@@ -539,7 +554,15 @@ class GameTimerApp(QtWidgets.QMainWindow):
             try:
                 box.setStyleSheet(
                     "QLabel{font-size:18px;} "
-                    "QPushButton{font-size:18px; padding:8px 16px;}"
+                    "QPushButton{font-size:18px; padding:10px 18px; border-radius:8px;}"
+                )
+                yes_btn.setStyleSheet(
+                    "QPushButton{background-color:#28a745; color:white;}"
+                    "QPushButton:hover{background-color:#2ecc71;}"
+                )
+                no_btn.setStyleSheet(
+                    "QPushButton{background-color:#6c757d; color:white;}"
+                    "QPushButton:hover{background-color:#95a5a6;}"
                 )
             except Exception:
                 pass
@@ -585,10 +608,22 @@ class GameTimerApp(QtWidgets.QMainWindow):
             box.show()
             box.raise_()
             box.activateWindow()
-            # Центрирование диалога по экрану
+            # Центрирование диалога по активному экрану (под курсором), с учетом DPI
             try:
-                screen = QtWidgets.QApplication.primaryScreen()
+                pos = QtGui.QCursor.pos()
+                screen = None
+                if hasattr(QtWidgets.QApplication, 'screenAt'):
+                    screen = QtWidgets.QApplication.screenAt(pos)
+                if screen is None:
+                    # Фоллбек: найти экран, который содержит курсор
+                    for s in QtWidgets.QApplication.screens():
+                        if s.geometry().contains(pos):
+                            screen = s
+                            break
+                if screen is None:
+                    screen = QtWidgets.QApplication.primaryScreen()
                 if screen:
+                    box.adjustSize()
                     geo = screen.availableGeometry()
                     bx = box.frameGeometry()
                     bx.moveCenter(geo.center())

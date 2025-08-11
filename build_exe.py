@@ -4,6 +4,10 @@
 Скрипт сборки и упаковки приложения Game Timer с помощью PyInstaller.
 Делает устойчивой сборку: выбирает иконку по наличию, добавляет существующие ресурсы,
 и использует актуальные скрытые импорты под текущий стек (PyQt5, psutil, keyboard, win32*).
+
+Запуск:
+    python build_exe.py
+Результат: dist/GameTimer.exe
 """
 
 import os
@@ -20,6 +24,7 @@ def add_data_arg(src: str, dst: str = '.') -> str:
 
 if __name__ == "__main__":
     base_dir = os.path.dirname(__file__)
+    app_name = "GameTimer"
 
     # Динамический выбор иконки: prefer .ico
     icon_candidates = [
@@ -52,6 +57,7 @@ if __name__ == "__main__":
     hidden_imports = [
         '--hidden-import=keyboard',
         '--hidden-import=psutil',
+        '--hidden-import=PyQt5.sip',
         '--hidden-import=win32gui',
         '--hidden-import=win32con',
         '--hidden-import=win32api',
@@ -61,8 +67,13 @@ if __name__ == "__main__":
     ]
 
     build_args = [
+        f'--name={app_name}',
         '--onefile',
         '--noconsole',
+        '--noconfirm',
+        '--clean',
+        f"--distpath={os.path.join(base_dir, 'dist')}",
+        f"--workpath={os.path.join(base_dir, 'build')}",
     ]
 
     if icon_arg:
@@ -74,11 +85,7 @@ if __name__ == "__main__":
     # Главный модуль
     build_args.append(os.path.join(base_dir, 'game_timer.py'))
 
-    # Необязательно: задать dist/build пути
-    # build_args += [
-    #     f"--distpath={os.path.join(base_dir, 'dist')}",
-    #     f"--workpath={os.path.join(base_dir, 'build')}",
-    #     '--clean',
-    # ]
+    # Печать аргументов для отладки (опционально)
+    # print('PyInstaller args:', build_args)
 
     PyInstaller.__main__.run(build_args)
