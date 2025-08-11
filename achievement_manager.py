@@ -8,7 +8,7 @@ import json
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, date
 from typing import Dict, Optional, List
 import logging
 from achievements import Achievement, ACHIEVEMENTS
@@ -31,7 +31,7 @@ class AchievementManager:
         self.achievements: Dict[str, Achievement] = ACHIEVEMENTS.copy()
         self._load_achievements()
         
-        # Статистика для достижений
+        # Статистика для достижений и ежедневные флаги
         self.stats = {
             'daily_uses': [],  # даты использования
             'session_duration': 0,  # длительность текущей сессии
@@ -40,8 +40,26 @@ class AchievementManager:
             'hotkeys_used': set(),  # использованные горячие клавиши
             'notifications_received': 0,  # полученные уведомления
             'breaks_taken': 0,  # сделанные перерывы
-            'last_active_date': None  # последняя дата активности
+            'last_active_date': None,  # последняя дата активности
+            # Ежедневные дисциплинарные флаги
+            'day_date': datetime.now().date().isoformat(),
+            'had_forced_block_today': False,
+            'attempts_during_rest_today': 0,
+            'limit_exceeded_today': False,
+            # Стрики дисциплины
+            'within_limit_streak': 0,
+            'clean_streak': 0
         }
+        # Попробуем загрузить сохранённую статистику, если была
+        try:
+            saved_stats = self.settings.get('achievement_stats', None)
+            if isinstance(saved_stats, dict):
+                # не переносим set напрямую
+                hot = saved_stats.get('hotkeys_used', [])
+                saved_stats['hotkeys_used'] = set(hot) if isinstance(hot, list) else set()
+                self.stats.update(saved_stats)
+        except Exception:
+            pass
         
     def _load_achievements(self):
         """Загрузка сохраненных достижений"""
@@ -160,36 +178,101 @@ class AchievementManager:
         """Вызывается когда пользователь делает перерыв вовремя"""
         self.stats['breaks_taken'] += 1
         self.update_achievement('break_champion')
+    
+    # --- Новые хуки дисциплины ---
+    def on_forced_block(self):
+        """Фиксирует принудительную блокировку (нарушение)."""
+        try:
+            self.stats['had_forced_block_today'] = True
+            self._persist_stats()
+        except Exception:
+            pass
+
+    def on_attempt_during_rest(self):
+        """Фиксирует попытку запуска игры во время перерыва."""
+        try:
+            self.stats['attempts_during_rest_today'] = int(self.stats.get('attempts_during_rest_today', 0)) + 1
+            self._persist_stats()
+        except Exception:
+            pass
+
+    def set_limit_exceeded_today(self):
+        """Отмечает, что сегодня дневной лимит превышен."""
+        try:
+            self.stats['limit_exceeded_today'] = True
+            self._persist_stats()
+        except Exception:
+            pass
+
+    def _persist_stats(self):
+        try:
+            to_save = dict(self.stats)
+            # Сериализация set
+            to_save['hotkeys_used'] = list(to_save.get('hotkeys_used', set()))
+            self.settings.set('achievement_stats', to_save)
+            self.settings.save()
+        except Exception:
+            pass
         
     def on_daily_check(self):
-        """Проверяет ежедневные достижения"""
+        """Ежедневная проверка: при смене дня подводит итоги вчерашнего дня, обновляет стрики и выдаёт достижения."""
         try:
             today = datetime.now().date()
-            
+            # Подведение итогов, если наступил новый день относительно stats['day_date']
+            try:
+                day_date = datetime.fromisoformat(self.stats.get('day_date', today.isoformat())).date()
+            except Exception:
+                day_date = today
+            if day_date != today:
+                # Итоги за day_date
+                no_violations = (not self.stats.get('had_forced_block_today')) and int(self.stats.get('attempts_during_rest_today', 0)) == 0
+                within_limit = (not self.stats.get('limit_exceeded_today'))
+
+                if no_violations:
+                    self.update_achievement('no_violations_today')
+                if within_limit:
+                    self.update_achievement('within_daily_limit')
+
+                # Обновление стриков
+                self.stats['within_limit_streak'] = (self.stats.get('within_limit_streak', 0) + 1) if within_limit else 0
+                self.stats['clean_streak'] = (self.stats.get('clean_streak', 0) + 1) if (within_limit and no_violations) else 0
+
+                # Ачивки за неделю
+                if self.stats['within_limit_streak'] >= 7:
+                    self.update_achievement('no_exceed_week')
+                if self.stats['clean_streak'] >= 7:
+                    self.update_achievement('super_week')
+
+                # Сброс флагов на новый день
+                self.stats['day_date'] = today.isoformat()
+                self.stats['had_forced_block_today'] = False
+                self.stats['attempts_during_rest_today'] = 0
+                self.stats['limit_exceeded_today'] = False
+                self.stats['daily_duration'] = 0
+
+            # Блок регулярной активности (существующая логика)
             # Проверяем последнюю активность
             if self.stats['last_active_date']:
                 last_date = datetime.fromisoformat(self.stats['last_active_date']).date()
                 if (today - last_date).days == 1:
                     self.stats['consecutive_days'] += 1
+                elif (today - last_date).days == 0:
+                    # тот же день — ничего
+                    pass
                 else:
                     self.stats['consecutive_days'] = 1
             else:
                 self.stats['consecutive_days'] = 1
-                
-            # Обновляем дату последней активности
+
             self.stats['last_active_date'] = today.isoformat()
-            
-            # Проверяем достижения
+
+            # Ачивки регулярности
             if self.stats['consecutive_days'] >= 5:
                 self.update_achievement('daily_hero')
-                
             if self.stats['consecutive_days'] >= 7:
                 self.update_achievement('weekly_master')
-                
-            # Сохраняем статистику
-            self.settings.set('achievement_stats', self.stats)
-            self.settings.save()
-            
+
+            self._persist_stats()
         except Exception as e:
             self.logger.error(f"Error checking daily achievements: {str(e)}")
             

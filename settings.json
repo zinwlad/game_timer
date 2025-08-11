@@ -43,9 +43,15 @@
         "daily_duration": 0,
         "consecutive_days": 1,
         "hotkeys_used": [],
-        "notifications_received": 0,
-        "breaks_taken": 0,
-        "last_active_date": "2025-08-11"
+        "notifications_received": 5,
+        "breaks_taken": 1,
+        "last_active_date": "2025-08-11",
+        "day_date": "2025-08-11",
+        "had_forced_block_today": true,
+        "attempts_during_rest_today": 16,
+        "limit_exceeded_today": false,
+        "within_limit_streak": 0,
+        "clean_streak": 0
     },
     "achievements": {
         "first_timer": {
@@ -94,7 +100,7 @@
             "completed_date": null
         },
         "notification_lover": {
-            "progress": 4,
+            "progress": 9,
             "completed": false,
             "completed_date": null
         },
@@ -104,9 +110,30 @@
             "completed_date": null
         },
         "break_champion": {
+            "progress": 1,
+            "completed": false,
+            "completed_date": null
+        },
+        "no_violations_today": {
+            "progress": 0,
+            "completed": false,
+            "completed_date": null
+        },
+        "within_daily_limit": {
+            "progress": 0,
+            "completed": false,
+            "completed_date": null
+        },
+        "no_exceed_week": {
+            "progress": 0,
+            "completed": false,
+            "completed_date": null
+        },
+        "super_week": {
             "progress": 0,
             "completed": false,
             "completed_date": null
         }
-    }
+    },
+    "rest_until": "2025-08-11T23:17:28.801870"
 }

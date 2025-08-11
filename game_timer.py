@@ -5,11 +5,12 @@ import sys
 import logging
 import ctypes
 import time
+import typing
 from datetime import datetime, timedelta
 from PyQt5 import QtWidgets, QtCore, QtGui
 from notification_window import NotificationWindow
 from countdown_overlay import CountdownOverlay
-
+from achievement_widgets import AchievementsWindow, AchievementCard
 from settings_manager import SettingsManager
 from game_blocker import GameBlocker
 from timer_manager import TimerManager
@@ -65,9 +66,12 @@ class GUIManager(QtWidgets.QWidget):
         self.stats_today = QtWidgets.QLabel("Сегодня сыграно: 00:00:00")
         self.stats_left = QtWidgets.QLabel("Осталось: 02:00:00")
         self.stats_week = QtWidgets.QLabel("За неделю: 00:00:00")
+        self.rest_info = QtWidgets.QLabel("")
+        self.rest_info.hide()
         stats_layout.addWidget(self.stats_today)
         stats_layout.addWidget(self.stats_left)
         stats_layout.addWidget(self.stats_week)
+        stats_layout.addWidget(self.rest_info)
         stats_group.setLayout(stats_layout)
         main_tab_layout.addWidget(stats_group)
 
@@ -115,23 +119,27 @@ class GUIManager(QtWidgets.QWidget):
         self.start_button = QtWidgets.QPushButton('Старт')
         self.pause_button = QtWidgets.QPushButton('Пауза')
         self.reset_button = QtWidgets.QPushButton('Сброс')
+        self.my_ach_button = QtWidgets.QPushButton("Мои достижения")
         btn_layout.addWidget(self.start_button)
         btn_layout.addWidget(self.pause_button)
         btn_layout.addWidget(self.reset_button)
+        btn_layout.addWidget(self.my_ach_button)
         control_group.setLayout(btn_layout)
         main_tab_layout.addWidget(control_group)
 
         # --- Пресеты ---
         presets_group = QtWidgets.QGroupBox("Пресеты")
         presets_layout = QtWidgets.QHBoxLayout()
-        presets = [
-            ("10 сек", 0, 0, 10),
-            ("30 мин", 0, 30, 0),
-            ("1 час", 1, 0, 0),
-            ("2 часа", 2, 0, 0)
-        ]
-        for text, h, m, s in presets:
-            btn = QtWidgets.QPushButton(text)
+        presets_cfg = self.app.settings.get('presets', {}) or {}
+        # Формат: имя: {hours, minutes, seconds}
+        for name, spec in presets_cfg.items():
+            try:
+                h = int(spec.get('hours', 0))
+                m = int(spec.get('minutes', 0))
+                s = int(spec.get('seconds', 0))
+            except Exception:
+                h, m, s = 0, 0, 0
+            btn = QtWidgets.QPushButton(name)
             btn.clicked.connect(lambda _, h=h, m=m, s=s: self.app.apply_preset(h, m, s))
             presets_layout.addWidget(btn)
         presets_group.setLayout(presets_layout)
@@ -157,6 +165,7 @@ class GUIManager(QtWidgets.QWidget):
         self.reset_button.clicked.connect(self.app.reset_timer)
         self.add_proc_button.clicked.connect(self.add_process)
         self.remove_proc_button.clicked.connect(self.remove_process)
+        self.my_ach_button.clicked.connect(self.show_my_achievements)
 
         self.tabs.addTab(main_tab, "Главная")
 
@@ -186,9 +195,23 @@ class GUIManager(QtWidgets.QWidget):
         ach_tab.setWidgetResizable(True)
         ach_container = QtWidgets.QWidget()
         self.ach_layout = QtWidgets.QVBoxLayout(ach_container)
-        self.ach_layout.addStretch(1)
         ach_tab.setWidget(ach_container)
         self.tabs.addTab(ach_tab, "Достижения")
+
+    def set_rest_info(self, text: str, visible: bool):
+        if visible:
+            self.rest_info.setText(text)
+            self.rest_info.show()
+        else:
+            self.rest_info.hide()
+            self.rest_info.setText("")
+
+    def show_my_achievements(self):
+        try:
+            dlg = AchievementsWindow(self.app.achievement_manager, self)
+            dlg.exec_()
+        except Exception as e:
+            self.logger.error(f"Не удалось открыть окно достижений: {e}")
 
     def update_per_game_stats(self, process_manager, period='today'):
         if not process_manager:
@@ -227,16 +250,9 @@ class GUIManager(QtWidgets.QWidget):
                     w.deleteLater()
             for ach in achievement_manager.get_all_achievements():
                 progress, total = achievement_manager.get_achievement_progress(ach.id)
-                card = QtWidgets.QGroupBox(ach.title)
-                v = QtWidgets.QVBoxLayout(card)
-                v.addWidget(QtWidgets.QLabel(ach.description))
-                pb = QtWidgets.QProgressBar()
-                pb.setRange(0, max(1, total))
-                pb.setValue(progress)
-                v.addWidget(pb)
-                status = "Получено" if ach.completed else f"Прогресс: {progress}/{total}"
-                v.addWidget(QtWidgets.QLabel(status))
-                self.ach_layout.insertWidget(self.ach_layout.count()-1, card)
+                card = AchievementCard(ach.title, ach.description, progress, total, ach.completed)
+                self.ach_layout.addWidget(card)
+            self.ach_layout.addStretch(1)
         except Exception as e:
             self.logger.error(f"Ошибка обновления вкладки достижений: {e}")
 
@@ -313,6 +329,7 @@ class GameTimerApp(QtWidgets.QMainWindow):
         except Exception:
             self.rest_until = None
         self._last_rest_notice_ts = 0.0
+        self.rest_reason = None  # 'limit' | 'cooldown' | None
 
         self.setup_connections()
         self.gui_manager.start_process_monitoring(self.process_manager)
@@ -326,6 +343,11 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self.passive_logging_timer = QtCore.QTimer(self)
         self.passive_logging_timer.timeout.connect(self.log_passive_usage)
         self.passive_logging_timer.start(self.settings.get('passive_logging_interval_ms', 60000))
+
+        # Анти-спам авто-приглашения к запуску таймера
+        self._next_auto_prompt_ts = 0.0
+        # Флаг: уже был показан один раз «грайс» после истечения таймера
+        self._expire_grace_used = False
 
     def setup_connections(self):
         self._init_hotkeys()
@@ -346,18 +368,50 @@ class GameTimerApp(QtWidgets.QMainWindow):
                     next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
                     # Если уже не стоит более длинный перерыв
                     if (not self.rest_until) or (self.rest_until < next_midnight):
+                        # Устанавливаем перерыв до полуночи как следствие дневного лимита
+                        self.rest_reason = 'limit'
                         self.start_rest_until(next_midnight)
+                        self._notify_daily_limit_exceeded()
+                        # Ачивки: отметим превышение лимита на сегодня
+                        try:
+                            self.achievement_manager.set_limit_exceeded_today()
+                        except Exception:
+                            pass
         except Exception as e:
             self.logger.error(f"Ошибка проверки дневного лимита: {e}")
         # 4) Если во время перерыва запущены игры — немедленная блокировка + уведомление
         try:
             if in_rest and self.process_manager.is_any_monitored_process_running():
                 self._notify_rest()
+                # Ачивки: попытка запуска во время перерыва
+                try:
+                    self.achievement_manager.on_attempt_during_rest()
+                except Exception:
+                    pass
                 self.game_blocker.update_timer_state(True)
                 self.game_blocker.start_blocking_sequence()
         except Exception as e:
             self.logger.error(f"Ошибка блокировки во время перерыва: {e}")
-        # 5) Обычный мониторинг авто-таймера и достижения
+        # 4.1) Обновить индикатор перерыва в UI
+        try:
+            if in_rest and self.rest_until:
+                until_str = self.rest_until.strftime('%H:%M')
+                self.gui_manager.set_rest_info(f"Перерыв до {until_str} (осталось {self.rest_remaining_str()})", True)
+            else:
+                self.gui_manager.set_rest_info("", False)
+        except Exception:
+            pass
+        # 5) При обнаружении игры — предложить запустить таймер (если не идёт и нет перерыва)
+        try:
+            if not in_rest and self.settings.get('auto_start_on_game_detect', True):
+                any_game = self.process_manager.is_any_monitored_process_running()
+                timer_running = self.timer_manager.is_running()
+                if any_game and not timer_running:
+                    self._maybe_prompt_auto_start()
+        except Exception:
+            pass
+
+        # 6) Обычный мониторинг авто-таймера и достижения
         self._autocountup_monitor()
         self.check_achievements()
 
@@ -383,6 +437,8 @@ class GameTimerApp(QtWidgets.QMainWindow):
             if hasattr(self, 'notification_shown'):
                 del self.notification_shown
             self.manual_start = True
+            # Новый запуск таймера — сбрасываем флаг грайса
+            self._expire_grace_used = False
         except Exception as e:
             self.logger.error(f"Ошибка при запуске таймера: {e}")
 
@@ -393,6 +449,8 @@ class GameTimerApp(QtWidgets.QMainWindow):
         self.game_blocker.update_timer_state(False)
         # Сброс флага ручного запуска
         self.manual_start = False
+        # Сброс грайса
+        self._expire_grace_used = False
         # Остановка таймера проверки после уведомления и сброс метки показа уведомления
         if hasattr(self, 'post_notification_timer'):
             self.post_notification_timer.stop()
@@ -439,6 +497,17 @@ class GameTimerApp(QtWidgets.QMainWindow):
         # Проверяем, не истек ли таймер
         timer_expired = self.timer_manager.is_expired()
         
+        # Если таймер уже истек ранее и «грайс» использован — сразу блокируем без уведомления
+        if any_game_running and timer_expired and getattr(self, '_expire_grace_used', False):
+            try:
+                self.logger.info("Таймер просрочен, повторный запуск игры — немедленная блокировка.")
+                self._hide_countdown_overlay()
+                self.game_blocker.update_timer_state(True)
+                self.game_blocker.start_blocking_sequence()
+                return
+            except Exception:
+                pass
+
         # Если таймер истек, но игра все еще запущена, показываем уведомление
         if any_game_running and timer_expired and not hasattr(self, 'notification_shown'):
             self.notification_window = NotificationWindow(
@@ -452,6 +521,8 @@ class GameTimerApp(QtWidgets.QMainWindow):
             except Exception:
                 pass
             self.notification_shown = True
+            # Отмечаем, что «грайс» использован
+            self._expire_grace_used = True
             
             # Запускаем таймер на 10 секунд для проверки завершения игры
             self.post_notification_timer = QtCore.QTimer(self)
@@ -486,6 +557,11 @@ class GameTimerApp(QtWidgets.QMainWindow):
                 self._hide_countdown_overlay()
                 self.game_blocker.update_timer_state(True)
                 self.game_blocker.start_blocking_sequence()
+                # Ачивки: зафиксировать принудительную блокировку
+                try:
+                    self.achievement_manager.on_forced_block()
+                except Exception:
+                    pass
                 # Устанавливаем обязательный перерыв после принудительной блокировки
                 if self.settings.get('enforce_cooldown_between_sessions', True):
                     minutes = int(self.settings.get('enforced_rest_minutes', 60) or 60)
@@ -496,6 +572,8 @@ class GameTimerApp(QtWidgets.QMainWindow):
                 # Достижения: сделал перерыв вовремя
                 try:
                     self.achievement_manager.on_break_taken()
+                    # Обновить UI вкладки достижений
+                    self.gui_manager.refresh_achievements(self.achievement_manager)
                 except Exception:
                     pass
             # Сбрасываем флаг, чтобы следующее истечение снова показало уведомление
@@ -507,6 +585,10 @@ class GameTimerApp(QtWidgets.QMainWindow):
     def check_achievements(self):
         """Проверяет ежедневные достижения при запуске."""
         self.achievement_manager.on_daily_check()
+        try:
+            self.gui_manager.refresh_achievements(self.achievement_manager)
+        except Exception:
+            pass
 
     # --- Перерывы (rest/cooldown) ---
     def is_in_rest(self) -> bool:
@@ -528,6 +610,7 @@ class GameTimerApp(QtWidgets.QMainWindow):
             if minutes <= 0:
                 return
             self._set_rest_until(datetime.now() + timedelta(minutes=minutes))
+            self.rest_reason = 'cooldown'
             self._notify_rest(initial=True)
         except Exception as e:
             self.logger.error(f"Ошибка запуска перерыва: {e}")
@@ -572,7 +655,17 @@ class GameTimerApp(QtWidgets.QMainWindow):
                 return
             self._last_rest_notice_ts = now_ts
             remaining = self.rest_remaining_str()
-            self.tray_manager.show_message("Перерыв", f"Сейчас идёт перерыв. Осталось: {remaining}")
+            title = "Перерыв"
+            if self.rest_reason == 'limit':
+                title = "Дневной лимит исчерпан — до завтра"
+            self.tray_manager.show_message(title, f"Осталось: {remaining}")
+        except Exception:
+            pass
+
+    def _notify_daily_limit_exceeded(self):
+        try:
+            remaining = self.rest_remaining_str()
+            self.tray_manager.show_message("Дневной лимит исчерпан — до завтра", f"Осталось до 00:00: {remaining}")
         except Exception:
             pass
 
@@ -608,6 +701,7 @@ class GameTimerApp(QtWidgets.QMainWindow):
             self.countdown_overlay.start(secs)
         except Exception as e:
             self.logger.error(f"Не удалось показать оверлей обратного отсчета: {e}")
+
 
     def _hide_countdown_overlay(self):
         try:

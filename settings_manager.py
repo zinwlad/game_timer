@@ -24,6 +24,7 @@ class SettingsManager:
             "minutes": 0,
             "processes": ["game.exe", "minecraft.exe", "CorelDRW.exe"],
             "presets": {
+                "10 сек": {"hours": 0, "minutes": 0, "seconds": 10},
                 "30 минут": {"hours": 0, "minutes": 30},
                 "1 час": {"hours": 1, "minutes": 0},
                 "2 часа": {"hours": 2, "minutes": 0}
@@ -67,7 +68,44 @@ class SettingsManager:
             "block_until_next_day_on_limit": True,
             "enforce_cooldown_between_sessions": True,
             # Конец текущего перерыва в ISO-формате (локальное время). Пусто, если перерыва нет
-            "rest_until": ""
+            "rest_until": "",
+            # Авто-запуск таймера при обнаружении игры
+            "auto_start_on_game_detect": True,
+            "auto_start_mode": "countup",  # 'countup' или 'countdown'
+            "auto_countdown_seconds": 3600,  # если выбран countdown
+            "auto_prompt_text": "Обнаружена игра. Начать таймер?",
+            "auto_prompt_snooze_minutes": 5,
+            # Подписи к ключевым настройкам (для удобства редактирования в settings.json)
+            "settings_descriptions": {
+                "mode": "Режим работы таймера: 'timer' — отсчет вниз, может быть и другие режимы при расширении",
+                "hours": "Стартовые часы таймера для сессии (целое число)",
+                "minutes": "Стартовые минуты таймера для сессии (целое число)",
+                "processes": "Список исполняемых файлов игр/приложений для мониторинга (можно добавлять/удалять строки)",
+                "presets": "Набор пресетов на главном экране. Можно добавлять/удалять. Формат: имя: {hours, minutes, seconds}",
+                "theme": "Тема интерфейса: 'light' или 'dark' (если поддерживается)",
+                "check_interval": "Интервал (сек) для некоторых проверок в приложении",
+                "periodic_tasks_interval_ms": "Период (мс) запуска фоновых задач UI (1 000 = 1 сек)",
+                "process_check_interval_ms": "Период (мс) сканирования запущенных процессов (5 000 = каждые 5 сек)",
+                "notification_check_delay_ms": "Через сколько мс после уведомления проверить, закрыта ли игра (по умолчанию 10 000)",
+                "notification_countdown_seconds": "Сколько секунд показывать обратный отсчёт перед блокировкой",
+                "passive_logging_interval_ms": "Раз в сколько мс писать пассивные записи логов (600 000 = 10 минут)",
+                "autostart": "Автозапуск приложения при старте системы (true/false)",
+                "hotkeys": "Горячие клавиши приложения. Можно менять сочетания (например 'ctrl+alt+s')",
+                "block_delay": "Задержка (сек) перед началом принудительной блокировки после уведомления",
+                "notification_sound": "Включить звук уведомления (true/false)",
+                "start_minimized": "Запускать свернутым (true/false)",
+                "block_screen_message": "Текст сообщения на экране блокировки",
+                "daily_limit_hours": "Дневной лимит игрового времени (часы). Пример: 4 или 6",
+                "enforced_rest_minutes": "Обязательный перерыв после принудительной блокировки (минуты). Пример: 60",
+                "block_until_next_day_on_limit": "Если true — при достижении дневного лимита блокируем до следующего дня",
+                "enforce_cooldown_between_sessions": "Если true — после принудительной блокировки включается перерыв (cooldown)",
+                "rest_until": "Техническое поле: время окончания текущего перерыва в ISO-формате. Лучше не менять вручную",
+                "auto_start_on_game_detect": "Если true — при запуске отслеживаемой игры будет показан вопрос и можно автоматически запустить таймер",
+                "auto_start_mode": "Режим авто-таймера: 'countup' — прямой отсчет, 'countdown' — обратный",
+                "auto_countdown_seconds": "Длительность (сек), если выбран режим 'countdown' (по умолчанию 3600 = 1 час)",
+                "auto_prompt_text": "Текст вопроса в окне при обнаружении игры",
+                "auto_prompt_snooze_minutes": "Через сколько минут повторно спрашивать, если нажали 'Нет' или закрыли окно"
+            }
         }
         self.load()
 
