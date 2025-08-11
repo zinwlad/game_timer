@@ -5,17 +5,16 @@
     "processes": [
         "game.exe",
         "minecraft.exe",
-        "CorelDRW.exe"
+        "CorelDRW.exe",
+        "roblox.exe",
+        "CrashHandler.exe",
+        "robloxplayerbeta.exe",
+        "Animal Revolt Battle Simulator.exe"
     ],
     "presets": {
-        "6 сек": {
+        "30 минут": {
             "hours": 0,
-            "minutes": 0,
-            "seconds": 6
-        },
-        "10 минут": {
-            "hours": 0,
-            "minutes": 10
+            "minutes": 30
         },
         "1 час": {
             "hours": 1,
@@ -24,11 +23,6 @@
         "2 часа": {
             "hours": 2,
             "minutes": 0
-        },
-        "10 секунд": {
-            "hours": 0,
-            "minutes": 0,
-            "seconds": 10
         }
     },
     "theme": "light",
@@ -36,10 +30,12 @@
     "autostart": false,
     "hotkeys": {
         "pause": "ctrl+space",
-        "reset": "ctrl+r"
+        "reset": "ctrl+r",
+        "add_30_min": "ctrl+alt+shift+plus"
     },
     "block_delay": 3,
     "notification_sound": true,
+    "daily_limit_hours": 6,
     "start_minimized": false,
     "block_screen_message": "Время игры истекло!\nПожалуйста, сделайте перерыв.",
     "achievement_stats": {
@@ -59,5 +55,13 @@
         "clean_streak": 0
     },
     "achievements": {},
-    "rest_until": ""
+    "rest_until": "",
+    "logging": {
+        "file_level": "INFO",
+        "console_level": "WARNING",
+        "max_bytes": 1000000,
+        "backup_count": 5,
+        "log_dir": "logs",
+        "log_file": "game_timer.log"
+    }
 }

@@ -66,6 +66,7 @@ class TrayManager:
                 'pause_resume': 'Пауза/Продолжить',
                 'reset': 'Сброс',
                 'add_5_min': '+5 минут',
+                'add_30_min': '+30 минут',
             }
             hotkeys = {}
             try:

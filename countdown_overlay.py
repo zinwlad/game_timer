@@ -1,4 +1,9 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
+try:
+    import win32gui, win32con
+except Exception:
+    win32gui = None
+    win32con = None
 
 class CountdownOverlay(QtWidgets.QWidget):
     """
@@ -44,15 +49,29 @@ class CountdownOverlay(QtWidgets.QWidget):
         self.label.setGraphicsEffect(effect)
         layout.addWidget(self.label)
 
-        # На весь экран (на активном дисплее)
-        screen = QtWidgets.QApplication.primaryScreen()
-        if screen:
-            self.setGeometry(screen.availableGeometry())
+        # На весь экран (активный дисплей под курсором; фоллбек — основной)
+        self._apply_screen_geometry()
 
     def start(self, seconds: int):
         self._seconds_left = max(0, int(seconds or 0))
         self._update_text()
+        # Перед показом убедимся, что на нужном экране
+        self._apply_screen_geometry()
         self.show()
+        try:
+            # Принудительный подъём и TOPMOST над полноэкранными окнами
+            self.raise_()
+            # Не активируем фокус (оверлей прозрачный для кликов), но поднимаем
+            if win32gui and win32con:
+                hwnd = int(self.winId())
+                win32gui.SetWindowPos(
+                    hwnd,
+                    win32con.HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
+                )
+        except Exception:
+            pass
         if self._seconds_left > 0:
             self._timer.start(1000)
         else:
@@ -82,3 +101,18 @@ class CountdownOverlay(QtWidgets.QWidget):
             self.label.setText(f"{self._seconds_left}")
         else:
             self.label.setText("")
+
+    def _apply_screen_geometry(self):
+        try:
+            pos = QtGui.QCursor.pos()
+            screen = None
+            if hasattr(QtWidgets.QApplication, 'screenAt'):
+                screen = QtWidgets.QApplication.screenAt(pos)
+            if screen is None:
+                screen = QtWidgets.QApplication.primaryScreen()
+            if screen:
+                # Используем полную геометрию экрана, чтобы перекрыть даже панели
+                geo = screen.geometry()
+                self.setGeometry(geo)
+        except Exception:
+            pass

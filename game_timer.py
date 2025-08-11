@@ -549,6 +549,7 @@ class GameTimerApp(QtWidgets.QMainWindow):
                 pass
             box.setDefaultButton(yes_btn)
             box.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+            box.setWindowFlag(QtCore.Qt.Tool, True)
             box.setWindowModality(QtCore.Qt.NonModal)
             # Крупный шрифт и удобные кнопки
             try:
@@ -608,6 +609,18 @@ class GameTimerApp(QtWidgets.QMainWindow):
             box.show()
             box.raise_()
             box.activateWindow()
+            # Принудительный TOPMOST через WinAPI (поверх полноэкранных окон)
+            try:
+                import win32gui, win32con  # type: ignore
+                hwnd = int(box.winId())
+                win32gui.SetWindowPos(
+                    hwnd,
+                    win32con.HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
+                )
+            except Exception:
+                pass
             # Центрирование диалога по активному экрану (под курсором), с учетом DPI
             try:
                 pos = QtGui.QCursor.pos()
@@ -1068,6 +1081,7 @@ class GameTimerApp(QtWidgets.QMainWindow):
                 "pause_resume": self.pause_resume,
                 "reset": self.reset_timer,
                 "add_5_min": self.add_5_minutes,
+                "add_30_min": self.add_30_minutes,
             }
         )
 
@@ -1078,6 +1092,10 @@ class GameTimerApp(QtWidgets.QMainWindow):
     def add_5_minutes(self):
         """Быстро добавляет +5 минут к таймеру (если запущен)."""
         self.timer_manager.add_minutes(5)
+
+    def add_30_minutes(self):
+        """Быстро добавляет +30 минут к таймеру (если запущен)."""
+        self.timer_manager.add_minutes(30)
 
     def increase_daily_limit(self): self.daily_limit_seconds += 600; self.update_stats()
     def decrease_daily_limit(self): self.daily_limit_seconds = max(0, self.daily_limit_seconds - 600); self.update_stats()

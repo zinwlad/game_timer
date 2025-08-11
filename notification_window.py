@@ -1,5 +1,10 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 from win32api import GetSystemMetrics
+try:
+    import win32gui, win32con
+except Exception:
+    win32gui = None
+    win32con = None
 import winsound
 import time
 import random
@@ -22,7 +27,7 @@ class NotificationWindow(QtWidgets.QDialog):
         self.logger = Logger("NotificationWindow", "logs/notifications.log")
 
         self.setWindowTitle(title)
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.Tool)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
 
         # Основной контейнер с тенью
@@ -121,6 +126,20 @@ class NotificationWindow(QtWidgets.QDialog):
     def show(self, duration=0):
         """Показать уведомление (без авто-закрытия по умолчанию)"""
         super().show()
+        try:
+            # Принудительный TOPMOST поверх полноэкранных окон
+            self.raise_()
+            self.activateWindow()
+            if win32gui and win32con:
+                hwnd = int(self.winId())
+                win32gui.SetWindowPos(
+                    hwnd,
+                    win32con.HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
+                )
+        except Exception:
+            pass
         winsound.PlaySound("SystemExclamation", winsound.SND_ASYNC)
         # Если передана продолжительность > 0, закроем окно по таймеру
         duration = int(duration or 0)
