@@ -158,6 +158,99 @@ class ProcessManager:
         except sqlite3.Error as e:
             self.logger.error(f"Error flushing buffer to database: {e}")
 
+    # --- Aggregations for per-game details ---
+    def get_usage_by_process(self, date=None):
+        """Возвращает словарь {process_name: seconds} за указанный день (по умолчанию сегодня)."""
+        if date is None:
+            date = datetime.now().date()
+        else:
+            date = datetime.strptime(date, '%Y-%m-%d').date() if isinstance(date, str) else date
+        result = {}
+        try:
+            with sqlite3.connect(self._usage_db) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT process_name, SUM(duration) as total
+                    FROM usage_stats
+                    WHERE date(timestamp) = ?
+                    GROUP BY process_name
+                ''', (date.strftime('%Y-%m-%d'),))
+                for name, total in cursor.fetchall():
+                    result[name] = int(total or 0)
+        except Exception as e:
+            self.logger.error(f"Error getting usage by process: {e}")
+        return result
+
+    def get_usage_by_process_range(self, start_date, end_date=None):
+        """Возвращает словарь {process_name: seconds} за период [start_date, end_date).
+        Если end_date не указан, берется start_date + 7 дней.
+        Принимает даты как date или 'YYYY-MM-DD'.
+        """
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if end_date is None:
+            end_date = start_date + timedelta(days=7)
+        elif isinstance(end_date, str):
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        result = {}
+        try:
+            with sqlite3.connect(self._usage_db) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT process_name, SUM(duration) as total
+                    FROM usage_stats
+                    WHERE date(timestamp) >= ? AND date(timestamp) < ?
+                    GROUP BY process_name
+                ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+                for name, total in cursor.fetchall():
+                    result[name] = int(total or 0)
+        except Exception as e:
+            self.logger.error(f"Error getting usage by process range: {e}")
+        return result
+
+    def get_last_seen_and_sessions(self, start_date=None, end_date=None, gap_minutes=15):
+        """Эвристически вычисляет последнее появление и число сессий по процессам за период.
+        Сессия считается прерванной, если между соседними записями > gap_minutes.
+        Возвращает словарь: {proc: {last_seen: 'YYYY-MM-DD HH:MM:SS', sessions: int}}
+        """
+        if start_date is None:
+            start_date = datetime.now().date()
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if end_date is None:
+            end_date = start_date + timedelta(days=1)
+        if isinstance(end_date, str):
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        info = {}
+        try:
+            with sqlite3.connect(self._usage_db) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT process_name, timestamp
+                    FROM usage_stats
+                    WHERE date(timestamp) >= ? AND date(timestamp) < ?
+                    ORDER BY process_name, timestamp
+                ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+                rows = cursor.fetchall()
+            from collections import defaultdict
+            grouped = defaultdict(list)
+            for name, ts in rows:
+                grouped[name].append(datetime.strptime(ts, '%Y-%m-%d %H:%M:%S'))
+            for name, times in grouped.items():
+                sessions = 0
+                prev = None
+                for t in times:
+                    if prev is None or (t - prev).total_seconds() > gap_minutes * 60:
+                        sessions += 1
+                    prev = t
+                info[name] = {
+                    'last_seen': times[-1].strftime('%Y-%m-%d %H:%M:%S') if times else None,
+                    'sessions': sessions
+                }
+        except Exception as e:
+            self.logger.error(f"Error computing last_seen/sessions: {e}")
+        return info
+
     def cleanup_old_data(self):
         """Очистка старых данных из БД"""
         try:

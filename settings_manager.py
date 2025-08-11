@@ -60,7 +60,14 @@ class SettingsManager:
                 "pause_resume": "ctrl+alt+p",
                 "reset": "ctrl+alt+r",
                 "add_5_min": "ctrl+alt+plus"
-            }
+            },
+            # Лимиты и перерывы (cooldown)
+            "daily_limit_hours": 4,
+            "enforced_rest_minutes": 60,
+            "block_until_next_day_on_limit": True,
+            "enforce_cooldown_between_sessions": True,
+            # Конец текущего перерыва в ISO-формате (локальное время). Пусто, если перерыва нет
+            "rest_until": ""
         }
         self.load()
 
